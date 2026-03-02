@@ -1,0 +1,26 @@
+{
+  "name": "lightmonitor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LightMonitor 数据库监控工具",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "start:ps": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start.ps1",
+    "pack:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package.ps1",
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "mysql2": "^3.9.7",
+    "vue": "^3.4.15",
+    "element-plus": "^2.5.3",
+    "axios": "^1.6.7",
+    "echarts": "^5.4.3",
+    "@element-plus/icons-vue": "^2.3.1"
+  },
+  "devDependencies": {
+    "vite": "^5.0.12",
+    "@vitejs/plugin-vue": "^5.0.3"
+  }
+}

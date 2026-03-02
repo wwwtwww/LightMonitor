@@ -1,0 +1,18 @@
+# Python 忽略项
+.venv/
+python/
+__pycache__/
+*.pyc
+
+# Node.js 前端忽略项
+node_modules/
+dist/
+ui/dist/
+
+# 数据库与发布包 (防隐私泄露和文件过大)
+monitor.db
+LightMonitor_Release/
+*.zip
+
+# 系统缓存文件
+.DS_Store
