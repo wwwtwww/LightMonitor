@@ -8,6 +8,7 @@
     "start": "node server/index.js",
     "start:ps": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start.ps1",
     "pack:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package.ps1",
+    "pack:offline": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-offline.ps1",
     "dev": "vite",
     "build": "vite build"
   },
