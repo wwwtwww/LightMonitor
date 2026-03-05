@@ -25,5 +25,5 @@ const handleBack = () => {
 </script>
 
 <style scoped>
-.app-container { max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f7fa; min-height: 100vh; }
+.app-container { max-width: 98%; margin: 0 auto; padding: 20px; background: var(--lm-bg); min-height: 100vh; }
 </style>

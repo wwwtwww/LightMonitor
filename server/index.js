@@ -104,6 +104,7 @@ async function handleApi(req, res, parsed) {
       name: body.name || host,
       business_system: body.business_system || '',
       repl_role: body.repl_role || '',
+      remark: body.remark || '',
       type,
       host,
       port,

@@ -1,0 +1,47 @@
+:root {
+  --lm-bg: #f5f7fa;
+  --lm-surface: #ffffff;
+  --lm-radius: 10px;
+  --lm-shadow-sm: 0 1px 10px rgba(15, 23, 42, 0.06);
+  --lm-shadow-md: 0 2px 12px rgba(0, 0, 0, 0.05);
+  --lm-border: 1px solid rgba(226, 232, 240, 0.9);
+  --lm-text: #111827;
+  --lm-muted: #6b7280;
+  --lm-muted-2: #9ca3af;
+}
+
+.lm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--lm-surface);
+  padding: 12px 16px;
+  border-radius: var(--lm-radius);
+  box-shadow: var(--lm-shadow-md);
+  margin-bottom: 16px;
+}
+
+.lm-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 260px;
+}
+
+.lm-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex: 1;
+}
+
+.lm-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--lm-text);
+}

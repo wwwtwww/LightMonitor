@@ -24,6 +24,7 @@ function openDb() {
       name TEXT,
       business_system TEXT,
       repl_role TEXT,
+      remark TEXT,
       db_type TEXT,
       host TEXT,
       port INTEGER,
@@ -54,6 +55,7 @@ function openDb() {
   // Migration for new columns
   try { db.exec(`ALTER TABLE targets ADD COLUMN business_system TEXT`) } catch (_) {}
   try { db.exec(`ALTER TABLE targets ADD COLUMN repl_role TEXT`) } catch (_) {}
+  try { db.exec(`ALTER TABLE targets ADD COLUMN remark TEXT`) } catch (_) {}
   try { db.exec(`ALTER TABLE metrics ADD COLUMN slave_delay INTEGER`) } catch (_) {}
   try { db.exec(`ALTER TABLE metrics ADD COLUMN role TEXT`) } catch (_) {}
 
@@ -70,6 +72,7 @@ function toRowTarget(r) {
     name: r.name,
     business_system: r.business_system || '',
     repl_role: r.repl_role || '',
+    remark: r.remark || '',
     type: r.db_type,
     host: r.host,
     port: r.port,
@@ -115,13 +118,14 @@ function insertTarget(rec) {
   const d = openDb()
   const ts = nowMs()
   d.prepare(`
-    INSERT INTO targets(id, name, business_system, repl_role, db_type, host, port, user, password, options, created_at, updated_at)
-    VALUES(@id,@name,@business_system,@repl_role,@db_type,@host,@port,@user,@password,@options,@created_at,@updated_at)
+    INSERT INTO targets(id, name, business_system, repl_role, remark, db_type, host, port, user, password, options, created_at, updated_at)
+    VALUES(@id,@name,@business_system,@repl_role,@remark,@db_type,@host,@port,@user,@password,@options,@created_at,@updated_at)
   `).run({
     id: rec.id,
     name: rec.name || rec.host,
     business_system: rec.business_system || '',
     repl_role: rec.repl_role || '',
+    remark: rec.remark || '',
     db_type: rec.type || rec.db_type,
     host: rec.host,
     port: rec.port || null,
@@ -141,6 +145,7 @@ function updateTarget(id, patch) {
     name: patch.name ?? cur.name,
     business_system: patch.business_system ?? cur.business_system,
     repl_role: patch.repl_role ?? cur.repl_role,
+    remark: patch.remark ?? cur.remark,
     db_type: (patch.type || patch.db_type) ?? cur.db_type,
     host: patch.host ?? cur.host,
     port: patch.port ?? cur.port,
@@ -151,7 +156,7 @@ function updateTarget(id, patch) {
   }
   d.prepare(`
     UPDATE targets SET
-      name=@name, business_system=@business_system, repl_role=@repl_role, db_type=@db_type, host=@host, port=@port, user=@user, password=@password, options=@options, updated_at=@updated_at
+      name=@name, business_system=@business_system, repl_role=@repl_role, remark=@remark, db_type=@db_type, host=@host, port=@port, user=@user, password=@password, options=@options, updated_at=@updated_at
     WHERE id=@id
   `).run({ id, ...next })
   const r = d.prepare(`SELECT * FROM targets WHERE id = ?`).get(id)

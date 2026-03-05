@@ -1,13 +1,17 @@
 <template>
   <div class="detail-view">
-    <div class="control-bar">
-      <div class="control-left">
+    <div class="lm-header">
+      <div class="lm-header-left">
         <el-button @click="emit('back')" icon="ArrowLeft">返回列表</el-button>
-        <h2 class="page-title">{{ target.name }}</h2>
+        <h2 class="page-title">
+          <span class="title-sys">{{ systemName || '—' }}</span>
+          <span class="title-sep"> / </span>
+          <span class="title-db">{{ target.name || '—' }}</span>
+        </h2>
       </div>
 
-      <div class="control-right">
-        <el-radio-group v-model="timeRange" size="default" @change="handleRangeChange">
+      <div class="lm-header-right">
+        <el-radio-group v-model="timeRange" size="small" @change="handleRangeChange">
           <el-radio-button label="1">近1h</el-radio-button>
           <el-radio-button label="3">近3h</el-radio-button>
           <el-radio-button label="6">近6h</el-radio-button>
@@ -23,83 +27,34 @@
           value-format="YYYY-MM-DD HH:mm:ss"
           :disabled-date="d => d.getTime() > Date.now()"
           @change="handleCustomRangeChange"
-          size="default"
-          style="width: 340px;"
+          size="small"
+          style="width: 320px;"
         />
 
         <div class="auto-refresh">
           <span class="auto-refresh-label">自动刷新</span>
-          <el-switch v-model="autoRefresh" @change="handleAutoRefreshChange" />
+          <el-switch v-model="autoRefresh" size="small" @change="handleAutoRefreshChange" />
         </div>
       </div>
     </div>
 
     <el-card class="box-card" shadow="never" style="margin-bottom: 20px;">
       <template #header><b>监控概览</b></template>
-      <div class="overview-grid">
-        <div class="overview-card">
-          <div class="overview-label">DB TYPE</div>
-          <div class="overview-value">{{ (target.type || '').toUpperCase() }}</div>
-        </div>
-        <div class="overview-card">
-          <div class="overview-label">ROLE</div>
-          <div class="overview-value">{{ roleText }}</div>
-        </div>
-        <div class="overview-card">
-          <div class="overview-label">HOST</div>
-          <div class="overview-value">{{ target.host }}:{{ target.port }}</div>
-        </div>
-        <div class="overview-card">
-          <div class="overview-label">USER</div>
-          <div class="overview-value">{{ target.user }}</div>
-        </div>
-
-        <div class="overview-card">
-          <div class="overview-label">SESSIONS</div>
-          <div class="overview-value">{{ latestStats.sessions || 0 }}</div>
-        </div>
-        <div class="overview-card">
-          <div class="overview-label">THREADS</div>
-          <div class="overview-value">{{ latestStats.threadsRunning || 0 }}</div>
-        </div>
-
-        <div class="overview-card" v-if="target.type.toLowerCase() === 'mysql'">
-          <div class="overview-label">QPS</div>
-          <div class="overview-value">{{ latestStats.qps || 0 }}</div>
-        </div>
-        <div class="overview-card" v-if="target.type.toLowerCase() === 'mysql'">
-          <div class="overview-label">TPS</div>
-          <div class="overview-value">{{ latestStats.tps || 0 }}</div>
-        </div>
-
-        <div class="overview-card clickable" v-if="target.type.toLowerCase() === 'mysql'" @click="showSlowDetails">
-          <div class="overview-label">SLOW QUERY</div>
-          <div class="overview-value">{{ latestStats.slowCount || 0 }}</div>
-        </div>
-
-        <div class="overview-card" v-if="target.type.toLowerCase() === 'mysql' && isSlaveTarget()">
-          <div class="overview-label">DELAY</div>
-          <div class="overview-value">{{ latestStats.slaveDelay >= 0 ? latestStats.slaveDelay + 's' : '--' }}</div>
-        </div>
-      </div>
-    </el-card>
-
-    <!-- 实时锁表监测 -->
-    <el-card v-if="target.type.toLowerCase() === 'mysql'" shadow="never" style="margin-bottom: 20px; border-color: #F56C6C;">
-        <template #header><div style="display:flex; justify-content:space-between"><b style="color: #F56C6C;">🔒 实时锁表监测</b><el-button size="small" type="danger" plain @click="fetchLocksData">刷新锁</el-button></div></template>
-        <el-table :data="lockData" border stripe size="small">
-          <el-table-column prop="blocking_thread" label="源头" width="100" />
-          <el-table-column prop="waiting_thread" label="被堵" width="100" />
-          <el-table-column prop="lock_duration" label="时长(s)" width="100" />
-          <el-table-column label="操作" width="80"><template #default="scope"><el-button type="danger" size="small" @click="handleKill(scope.row.blocking_thread)">KILL</el-button></template></el-table-column>
-        </el-table>
+      <el-row :gutter="12">
+        <el-col v-for="item in overviewItems" :key="item.key" :span="6">
+          <div class="overview-card" :class="{ clickable: item.clickable }" @click="item.onClick && item.onClick()">
+            <div class="overview-label">{{ item.label }}</div>
+            <div class="overview-value">{{ item.value }}</div>
+          </div>
+        </el-col>
+      </el-row>
     </el-card>
 
     <!-- 图表列表 -->
     <div class="charts-grid">
       <div class="chart-item" v-for="conf in chartConfigs" :key="conf.id" v-show="!conf.onlyMysql || target.type.toLowerCase() === 'mysql'">
         <div class="chart-header">
-          <span class="title">📈 {{ conf.title }} ({{ getRangeText() }})</span>
+          <span class="title">{{ conf.title }} ({{ getRangeText() }})</span>
           <div class="agg-stats">
             <span>最大: <b>{{ chartAggs[conf.id]?.max || 0 }}</b></span>
             <span>最小: <b>{{ chartAggs[conf.id]?.min || 0 }}</b></span>
@@ -110,14 +65,24 @@
       </div>
     </div>
 
+    <el-card v-if="target.type.toLowerCase() === 'mysql'" shadow="never" style="margin-top: 20px; border-color: #F56C6C;">
+        <template #header><div style="display:flex; justify-content:space-between"><b style="color: #F56C6C;">实时锁表监测</b><el-button size="small" type="danger" plain @click="fetchLocksData">刷新锁</el-button></div></template>
+        <el-table :data="lockData" border stripe size="small" empty-text="暂无锁等待">
+          <el-table-column prop="blocking_thread" label="源头" width="100" />
+          <el-table-column prop="waiting_thread" label="被堵" width="100" />
+          <el-table-column prop="lock_duration" label="时长(s)" width="100" />
+          <el-table-column label="操作" width="80"><template #default="scope"><el-button type="danger" size="small" @click="handleKill(scope.row.blocking_thread)">KILL</el-button></template></el-table-column>
+        </el-table>
+    </el-card>
+
     <SlowQueryModal v-model:visible="slowDialogVisible" :data="slowData" />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, nextTick, defineProps, defineEmits, onBeforeUnmount, computed } from 'vue'
+import { ref, reactive, onMounted, nextTick, defineProps, defineEmits, onBeforeUnmount, computed } from 'vue'
 import * as echarts from 'echarts'
-import { View, ArrowLeft } from '@element-plus/icons-vue'
+import { ArrowLeft } from '@element-plus/icons-vue'
 import { useApi } from '../composables/useApi'
 import SlowQueryModal from './SlowQueryModal.vue'
 
@@ -155,6 +120,28 @@ const roleText = computed(() => {
   if (role === 'master') return '主库'
   if (role === 'standalone') return '单机'
   return '未知'
+})
+const systemName = computed(() => props.target.system_name || props.target.business_system || '')
+const overviewItems = computed(() => {
+  const isMysql = (props.target.type || '').toLowerCase() === 'mysql'
+  const host = [props.target.host, props.target.port].filter(Boolean).join(':')
+  const delayText = latestStats.value.slaveDelay >= 0 ? `${latestStats.value.slaveDelay}s` : '--'
+  const items = [
+    { key: 'db_type', label: 'DB TYPE', value: (props.target.type || '').toUpperCase() },
+    { key: 'role', label: 'ROLE', value: roleText.value },
+    { key: 'host', label: 'HOST', value: host || '--' },
+    { key: 'sessions', label: 'SESSIONS', value: latestStats.value.sessions || 0 },
+    { key: 'threads', label: 'THREADS', value: latestStats.value.threadsRunning || 0 },
+  ]
+  if (isMysql) {
+    items.push(
+      { key: 'qps', label: 'QPS', value: latestStats.value.qps || 0 },
+      { key: 'tps', label: 'TPS', value: latestStats.value.tps || 0 },
+      { key: 'slow', label: 'SLOW QUERY', value: latestStats.value.slowCount || 0, clickable: true, onClick: showSlowDetails },
+    )
+    if (isSlaveTarget()) items.push({ key: 'delay', label: 'DELAY', value: delayText })
+  }
+  return items
 })
 const getRangeText = () => {
   if (customRange.value && customRange.value.length === 2) return `${customRange.value[0]} ~ ${customRange.value[1]}`
@@ -241,7 +228,13 @@ const initAllCharts = () => {
 }
 
 const handleRangeChange = () => { customRange.value = []; initAllCharts() }
-const handleCustomRangeChange = () => { if (customRange.value && customRange.value.length === 2) autoRefresh.value = false; initAllCharts() }
+const handleCustomRangeChange = () => {
+  if (customRange.value && customRange.value.length === 2) {
+    autoRefresh.value = false
+    clearInterval(chartTimer)
+  }
+  initAllCharts()
+}
 
 const handleAutoRefreshChange = () => {
   clearInterval(chartTimer)
@@ -280,10 +273,10 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.control-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #fff; padding: 12px 16px; border-radius: 10px; margin-bottom: 16px; box-shadow: 0 2px 12px 0 rgba(0,0,0,.05); flex-wrap: wrap; }
-.control-left { display: flex; align-items: center; gap: 12px; min-width: 260px; }
 .page-title { margin: 0; font-size: 18px; font-weight: 700; color: #111827; }
-.control-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; flex: 1; }
+.title-sys { color: #6b7280; font-weight: 500; }
+.title-sep { color: #9ca3af; font-weight: 500; }
+.title-db { color: #111827; font-weight: 800; }
 .auto-refresh { display: flex; align-items: center; gap: 8px; }
 .auto-refresh-label { font-size: 12px; color: #6b7280; }
 .info-card-wrapper { background: #fff; border: 1px solid #e4e7ed; padding: 15px; text-align: center; border-radius: 8px; }
@@ -295,7 +288,7 @@ onBeforeUnmount(() => {
 .mini-metric-card .label { font-size: 12px; color: #909399; margin-bottom: 5px; }
 .mini-metric-card .value { font-size: 22px; font-weight: bold; color: #303133; }
 .charts-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.chart-item { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 12px 0 rgba(0,0,0,.05); }
+.chart-item { background: #fff; padding: 20px; border-radius: 8px; box-shadow: var(--lm-shadow-md); }
 .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
 .chart-header .title { font-weight: bold; color: #303133; }
 .agg-stats { font-size: 12px; color: #606266; }
@@ -306,12 +299,9 @@ onBeforeUnmount(() => {
   .charts-grid { grid-template-columns: 1fr; }
 }
 
-.overview-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
-.overview-card { background: #fff; border-radius: 10px; padding: 12px 14px; box-shadow: 0 1px 10px rgba(15, 23, 42, 0.06); border: 1px solid rgba(226, 232, 240, 0.9); }
+.overview-card { background: #fff; border-radius: 10px; padding: 12px 14px; box-shadow: var(--lm-shadow-sm); border: var(--lm-border); }
 .overview-card.clickable { cursor: pointer; }
 .overview-card.clickable:hover { box-shadow: 0 6px 20px rgba(15, 23, 42, 0.10); transform: translateY(-1px); transition: 0.15s; }
 .overview-label { font-size: 11px; color: #6b7280; letter-spacing: 0.02em; }
 .overview-value { margin-top: 6px; font-size: 20px; font-weight: 700; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-@media (max-width: 1200px) { .overview-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 700px) { .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

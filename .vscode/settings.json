@@ -1,3 +1,7 @@
 {
-    "git.ignoreLimitWarning": true
+    "git.ignoreLimitWarning": true,
+    "git.path": "D:\\\\dev\\\\PortableGit\\\\bin\\\\git.exe",
+    "terminal.integrated.env.windows": {
+        "PATH": "D:\\\\dev\\\\PortableGit\\\\bin;${env:PATH}"
+    }
 }

@@ -10,7 +10,11 @@ export function useApi() {
 
   const fetchList = async () => {
     try {
-      tableData.value = (await axios.get(`${API_URL}/databases`)).data.data
+      const rows = (await axios.get(`${API_URL}/databases`)).data.data
+      tableData.value = (rows || []).map(r => ({
+        ...r,
+        system_name: r?.system_name ?? r?.business_system ?? ''
+      }))
     } catch (e) {
       console.error(e)
     }
