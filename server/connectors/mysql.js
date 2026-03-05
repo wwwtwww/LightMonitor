@@ -9,8 +9,23 @@ try {
 const pools = new Map()
 const prevStats = new Map() // id -> { ts, queries, commits, rollbacks }
 
+function hashSecret(s) {
+  try {
+    const crypto = require('crypto')
+    return crypto.createHash('sha1').update(String(s || '')).digest('hex').slice(0, 12)
+  } catch (_) {
+    return String(s || '').length ? 'set' : 'empty'
+  }
+}
+
 function poolKey(cfg) {
-  return cfg.id || `${cfg.host}:${cfg.port}:${cfg.user || ''}`
+  const host = cfg.host || ''
+  const port = cfg.port || 3306
+  const user = cfg.user || ''
+  const db = cfg.options?.database || ''
+  const pwd = hashSecret(cfg.password || '')
+  const id = cfg.id || ''
+  return `${id}|${host}|${port}|${user}|${pwd}|${db}`
 }
 
 function getPool(cfg) {
@@ -38,12 +53,13 @@ function getPool(cfg) {
 }
 
 async function queryGlobalStatus(conn) {
-  const names = ['Threads_connected', 'Queries', 'Com_commit', 'Com_rollback']
+  const names = ['Threads_connected', 'Threads_running', 'Queries', 'Com_commit', 'Com_rollback']
   const [rows] = await conn.query(`SHOW GLOBAL STATUS WHERE Variable_name IN (${names.map(()=>'?').join(',')})`, names)
   const map = {}
   for (const r of rows) map[r.Variable_name] = Number(r.Value)
   return {
     threadsConnected: map.Threads_connected ?? 0,
+    threadsRunning: map.Threads_running ?? 0,
     queries: map.Queries ?? 0,
     commits: map.Com_commit ?? 0,
     rollbacks: map.Com_rollback ?? 0,
@@ -64,49 +80,63 @@ class MySQLConnector extends BaseConnector {
         conn.release()
       }
     } catch (e) {
-      return { ok: false, online: false, error: e && (e.code || e.message || 'connect_error') }
+      return { ok: false, online: false, error: e && (e.code || 'connect_error'), detail: e && (e.message || '') }
     }
   }
 
   async collectMetrics() {
-    if (!mysql) return { sessions: 0, qps: 0, tps: 0, slowCount: 0 }
+    if (!mysql) throw new Error('mysql2_not_installed')
+    const pool = getPool(this.cfg)
+    const conn = await pool.getConnection()
     try {
-      const pool = getPool(this.cfg)
-      const conn = await pool.getConnection()
-      try {
-        const s = await queryGlobalStatus(conn)
-        const now = Date.now()
-        const prev = prevStats.get(this.cfg.id)
-        let qps = 0, tps = 0
-        if (prev && s.queries >= prev.queries) {
-          const dt = Math.max(1, (now - prev.ts) / 1000)
-          qps = (s.queries - prev.queries) / dt
-          const trx = (s.commits - prev.commits) + (s.rollbacks - prev.rollbacks)
-          tps = trx / dt
-        }
-        prevStats.set(this.cfg.id, { ts: now, queries: s.queries, commits: s.commits, rollbacks: s.rollbacks })
-        let slowCount = 0
-        try {
-          const [rows] = await conn.query(`
-            SELECT SUM(COUNT_STAR) AS c
-            FROM performance_schema.events_statements_summary_by_digest
-            WHERE AVG_TIMER_WAIT >= 5000000000
-          `)
-          slowCount = Number(rows?.[0]?.c || 0)
-        } catch (_) {
-          slowCount = 0
-        }
-        return {
-          sessions: s.threadsConnected,
-          qps: Math.max(0, Number(qps.toFixed(2))),
-          tps: Math.max(0, Number(tps.toFixed(2))),
-          slowCount,
-        }
-      } finally {
-        conn.release()
+      const s = await queryGlobalStatus(conn)
+      const now = Date.now()
+      const prev = prevStats.get(this.cfg.id)
+      let qps = 0, tps = 0
+      if (prev && s.queries >= prev.queries) {
+        const dt = Math.max(1, (now - prev.ts) / 1000)
+        qps = (s.queries - prev.queries) / dt
+        const trx = (s.commits - prev.commits) + (s.rollbacks - prev.rollbacks)
+        tps = trx / dt
       }
-    } catch (_) {
-      return { sessions: 0, qps: 0, tps: 0, slowCount: 0 }
+      prevStats.set(this.cfg.id, { ts: now, queries: s.queries, commits: s.commits, rollbacks: s.rollbacks })
+      let slowCount = 0
+      try {
+        const [rows] = await conn.query(`
+          SELECT SUM(COUNT_STAR) AS c
+          FROM performance_schema.events_statements_summary_by_digest
+          WHERE AVG_TIMER_WAIT >= 5000000000
+        `)
+        slowCount = Number(rows?.[0]?.c || 0)
+      } catch (_) {
+        slowCount = 0
+      }
+
+      let role = 'master'
+      let slaveDelay = -1
+      try {
+        let [rStatus] = await conn.query('SHOW REPLICA STATUS').catch(() => [])
+        if (!rStatus || rStatus.length === 0) {
+          ;[rStatus] = await conn.query('SHOW SLAVE STATUS').catch(() => [])
+        }
+        if (rStatus && rStatus.length > 0) {
+          role = 'slave'
+          slaveDelay = rStatus[0].Seconds_Behind_Master
+          if (slaveDelay === null || slaveDelay === undefined) slaveDelay = -1
+        }
+      } catch (_) {}
+
+      return {
+        sessions: s.threadsConnected,
+        threadsRunning: s.threadsRunning,
+        qps: Math.max(0, Number(qps.toFixed(2))),
+        tps: Math.max(0, Number(tps.toFixed(2))),
+        slowCount,
+        role,
+        slaveDelay: Number(slaveDelay)
+      }
+    } finally {
+      conn.release()
     }
   }
 

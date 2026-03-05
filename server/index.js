@@ -2,12 +2,13 @@ const http = require('http')
 const url = require('url')
 const path = require('path')
 const fs = require('fs')
+const logger = require('./logger')
 const store = require('./store')
 const MySQLConnector = require('./connectors/mysql')
 const OracleConnector = require('./connectors/oracle')
 const SQLServerConnector = require('./connectors/sqlserver')
 
-const state = store.init()
+store.init()
 
 function respondJson(res, code, obj) {
   res.writeHead(code, {
@@ -47,63 +48,110 @@ function connectorFor(cfg) {
   return new MySQLConnector(cfg)
 }
 
-function latestMetric(id) {
-  const arr = state.metrics[id] || []
-  return arr.length ? arr[arr.length - 1] : null
+async function latestMetricFromDb(id) {
+  return store.latestMetric(id)
 }
 
 async function handleApi(req, res, parsed) {
   const { pathname, query } = parsed
   if (req.method === 'OPTIONS') return respondJson(res, 200, {})
+  if (pathname === '/api/test-connection' && req.method === 'POST') {
+    const body = await parseBody(req)
+    const type = String(body.type || '').toLowerCase()
+    const allowedTypes = new Set(['mysql', 'oracle', 'sqlserver'])
+    if (!allowedTypes.has(type)) return respondJson(res, 400, { ok: false, online: false, error: 'invalid_type' })
+    const host = String(body.host || '').trim()
+    if (!host) return respondJson(res, 400, { ok: false, online: false, error: 'invalid_host' })
+    const port = (body.port === undefined || body.port === null || body.port === '') ? null : Number(body.port)
+    if (port !== null && Number.isNaN(port)) return respondJson(res, 400, { ok: false, online: false, error: 'invalid_port' })
+    try {
+      const cfg = {
+        id: body.id || '',
+        type,
+        host,
+        port,
+        user: body.user || '',
+        password: body.password || '',
+        options: body.options || {},
+      }
+      const conn = connectorFor(cfg)
+      const r = await conn.testConnection()
+      return respondJson(res, 200, r)
+    } catch (e) {
+      return respondJson(res, 200, { ok: false, online: false, error: e && (e.code || 'connect_error'), detail: e && (e.message || '') })
+    }
+  }
   if (pathname === '/api/databases' && req.method === 'GET') {
-    const list = state.dbs.map(d => {
+    const dbs = store.listTargets()
+    const list = dbs.map(d => {
       const { password, ...pub } = d
-      return { ...pub, latest: latestMetric(d.id) }
+      return { ...pub, latest: store.latestMetric(d.id) }
     })
     return respondJson(res, 200, { data: list })
   }
   if (pathname === '/api/databases' && req.method === 'POST') {
     const body = await parseBody(req)
+    const type = String(body.type || '').toLowerCase()
+    const allowedTypes = new Set(['mysql', 'oracle', 'sqlserver'])
+    if (!allowedTypes.has(type)) return respondJson(res, 400, { error: 'invalid_type' })
+    const host = String(body.host || '').trim()
+    if (!host) return respondJson(res, 400, { error: 'invalid_host' })
+    const port = (body.port === undefined || body.port === null || body.port === '') ? null : Number(body.port)
+    if (port !== null && Number.isNaN(port)) return respondJson(res, 400, { error: 'invalid_port' })
     const id = genId()
     const rec = {
       id,
-      name: body.name || body.host,
-      type: body.type,
-      host: body.host,
-      port: body.port,
+      name: body.name || host,
+      business_system: body.business_system || '',
+      repl_role: body.repl_role || '',
+      type,
+      host,
+      port,
       user: body.user || '',
       password: body.password || '',
       options: body.options || {},
     }
-    store.upsertDb(state.dbs, rec)
-    store.saveAll(state.dbs, state.metrics)
-    return respondJson(res, 200, { data: rec })
+    if (type === 'mysql') {
+      try {
+        const conn = connectorFor(rec)
+        const r = await conn.testConnection()
+        if (!r || !r.ok || !r.online) return respondJson(res, 400, { error: 'connect_failed', detail: r?.error || 'connect_error' })
+      } catch (e) {
+        return respondJson(res, 400, { error: 'connect_failed', detail: e && (e.code || e.message || 'connect_error') })
+      }
+    }
+    try {
+      store.insertTarget(rec)
+      logger.info(`Added target: ${rec.name} (${rec.host}:${rec.port || ''})`)
+      return respondJson(res, 200, { data: rec })
+    } catch (e) {
+      logger.error(`Add target failed: ${e && (e.message || e)}`)
+      return respondJson(res, 500, { error: 'add_target_failed' })
+    }
   }
   if (pathname.startsWith('/api/databases/') && req.method === 'PUT') {
     const id = pathname.split('/').pop()
     const body = await parseBody(req)
-    const exist = state.dbs.find(x => x.id === id)
+    const exist = store.getTarget(id)
     if (!exist) return respondJson(res, 404, { error: 'not_found' })
     const update = { ...body }
     if ('password' in update && (!update.password || update.password === '')) {
       delete update.password
     }
-    const rec = { ...exist, ...update, id }
-    store.upsertDb(state.dbs, rec)
-    store.saveAll(state.dbs, state.metrics)
-    const { password, ...pub } = rec
+    const updated = store.updateTarget(id, update)
+    logger.info(`Updated target: ${id}`)
+    const { password, ...pub } = updated || {}
     return respondJson(res, 200, { data: pub })
   }
   if (pathname.startsWith('/api/databases/') && req.method === 'DELETE') {
     const id = pathname.split('/').pop()
-    store.removeDb(state.dbs, id)
-    delete state.metrics[id]
-    store.saveAll(state.dbs, state.metrics)
+    store.deleteTarget(id)
+    logger.info(`Deleted target: ${id}`)
     return respondJson(res, 200, { ok: true })
   }
   if (pathname.endsWith('/test') && req.method === 'POST') {
     const id = pathname.split('/')[3]
-    const cfg = state.dbs.find(x => x.id === id)
+    const cfg = store.getTarget(id)
     if (!cfg) return respondJson(res, 404, { error: 'not_found' })
     const conn = connectorFor(cfg)
     const r = await conn.testConnection()
@@ -111,30 +159,44 @@ async function handleApi(req, res, parsed) {
   }
   if (pathname.endsWith('/status') && req.method === 'GET') {
     const id = pathname.split('/')[3]
-    const last = latestMetric(id)
+    const last = store.latestMetric(id)
     return respondJson(res, 200, { data: last })
   }
   if (pathname.endsWith('/metrics') && req.method === 'GET') {
     const id = pathname.split('/')[3]
     const now = Date.now()
-    if (query.range === '1h') {
-      const from = now - 3600 * 1000
-      const arr = require('./store').rangeMetrics(state.metrics, id, from, now)
-      return respondJson(res, 200, { data: arr })
+    if (query.from && query.to) {
+      const from = Number(query.from)
+      const to = Number(query.to)
+      if (!Number.isNaN(from) && !Number.isNaN(to) && to >= from) {
+        const arr = store.rangeMetrics(id, from, to)
+        return respondJson(res, 200, { data: arr })
+      }
+    }
+    if (query.range) {
+      const m = String(query.range).trim().match(/^(\d+)\s*h$/i)
+      if (m) {
+        const hours = Math.max(1, Number(m[1]))
+        const from = now - hours * 3600 * 1000
+        const arr = store.rangeMetrics(id, from, now)
+        return respondJson(res, 200, { data: arr })
+      }
     }
     if (query.date) {
-      const d = new Date(query.date + 'T00:00:00Z')
-      const from = d.getTime()
-      const to = from + 24 * 3600 * 1000 - 1
-      const arr = require('./store').rangeMetrics(state.metrics, id, from, to)
-      return respondJson(res, 200, { data: arr })
+      const dt = new Date(query.date)
+      if (!Number.isNaN(dt.getTime())) {
+        const from = dt.getTime()
+        const to = from + 3600 * 1000
+        const arr = store.rangeMetrics(id, from, to)
+        return respondJson(res, 200, { data: arr })
+      }
     }
-    const arr = state.metrics[id] || []
+    const arr = store.rangeMetrics(id, 0, now)
     return respondJson(res, 200, { data: arr })
   }
   if (pathname.endsWith('/mock') && req.method === 'POST') {
     const id = pathname.split('/')[3]
-    const cfg = state.dbs.find(x => x.id === id)
+    const cfg = store.getTarget(id)
     if (!cfg) return respondJson(res, 404, { error: 'not_found' })
     const body = await parseBody(req)
     const now = Date.now()
@@ -168,15 +230,13 @@ async function handleApi(req, res, parsed) {
         points.push({ ts, online: true, sessions, qps, tps, slowCount })
       }
     }
-    if (!state.metrics[id]) state.metrics[id] = []
     const keepHours = Number(process.env.RETAIN_HOURS || 24 * 7)
-    for (const p of points) store.pushMetric(state.metrics, id, p, keepHours)
-    store.saveAll(state.dbs, state.metrics)
+    for (const p of points) store.insertMetric(id, p, keepHours)
     return respondJson(res, 200, { inserted: points.length })
   }
   if (pathname.endsWith('/mysql/locks') && req.method === 'GET') {
     const id = pathname.split('/')[3]
-    const cfg = state.dbs.find(x => x.id === id)
+    const cfg = store.getTarget(id)
     if (!cfg || cfg.type.toLowerCase() !== 'mysql') return respondJson(res, 400, { error: 'mysql_only' })
     const conn = connectorFor(cfg)
     const r = await conn.getLocks()
@@ -184,7 +244,7 @@ async function handleApi(req, res, parsed) {
   }
   if (pathname.endsWith('/mysql/kill') && req.method === 'POST') {
     const id = pathname.split('/')[3]
-    const cfg = state.dbs.find(x => x.id === id)
+    const cfg = store.getTarget(id)
     if (!cfg || cfg.type.toLowerCase() !== 'mysql') return respondJson(res, 400, { error: 'mysql_only' })
     const body = await parseBody(req)
     const conn = connectorFor(cfg)
@@ -193,7 +253,7 @@ async function handleApi(req, res, parsed) {
   }
   if (pathname.endsWith('/mysql/top-slow') && req.method === 'GET') {
     const id = pathname.split('/')[3]
-    const cfg = state.dbs.find(x => x.id === id)
+    const cfg = store.getTarget(id)
     if (!cfg || cfg.type.toLowerCase() !== 'mysql') return respondJson(res, 400, { error: 'mysql_only' })
     const conn = connectorFor(cfg)
     const r = await conn.topSlowQueries()
@@ -254,6 +314,7 @@ const server = http.createServer(async (req, res) => {
   if (parsed.pathname.startsWith('/api/')) {
     const handled = await handleApi(req, res, parsed)
     if (handled !== false) return
+    logger.warn(`API not found: ${req.method} ${parsed.pathname}`)
     return respondJson(res, 404, { error: 'not_found' })
   }
   if (serveStatic(req, res, parsed)) return
@@ -264,24 +325,28 @@ const server = http.createServer(async (req, res) => {
 function pollOnce() {
   const keepHours = Number(process.env.RETAIN_HOURS || 24 * 7)
   const now = Date.now()
-  for (const cfg of state.dbs) {
+  const dbs = store.listTargets()
+  for (const cfg of dbs) {
     const conn = connectorFor(cfg)
     conn.collectMetrics().then(m => {
       const point = { ts: now, online: true, ...m }
-      store.pushMetric(state.metrics, cfg.id, point, keepHours)
-      store.saveAll(state.dbs, state.metrics)
-    }).catch(() => {
-      const point = { ts: now, online: false, sessions: 0, qps: 0, tps: 0, slowCount: 0 }
-      store.pushMetric(state.metrics, cfg.id, point, keepHours)
-      store.saveAll(state.dbs, state.metrics)
+      store.insertMetric(cfg.id, point, keepHours)
+    }).catch(err => {
+      logger.error(`Collect metrics failed for ${cfg.name}: ${err.message}`)
+      const point = { ts: now, online: false, sessions: 0, threadsRunning: 0, qps: 0, tps: 0, slowCount: 0, role: 'unknown', slaveDelay: -1 }
+      store.insertMetric(cfg.id, point, keepHours)
     })
   }
+  const cutoff = Date.now() - keepHours * 3600 * 1000
+  store.cleanupBefore(cutoff)
 }
 
 const SAMPLE_MS = Number(process.env.SAMPLE_MS || 5000)
+pollOnce()
 setInterval(pollOnce, SAMPLE_MS)
 
 const PORT = process.env.PORT || 8080
-server.listen(PORT, () => {
-  console.log('LightMonitor server on', PORT)
+const HOST = process.env.HOST || process.env.BIND_HOST || '0.0.0.0'
+server.listen(PORT, HOST, () => {
+  logger.info(`LightMonitor server started on ${HOST}:${PORT}`)
 })
