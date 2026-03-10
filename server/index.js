@@ -44,7 +44,7 @@ function connectorFor(cfg) {
   const t = (cfg.type || '').toLowerCase()
   if (t === 'mysql') return new MySQLConnector(cfg)
   if (t === 'oracle') return new OracleConnector(cfg)
-  if (t === 'sqlserver') return new SQLServerConnector(cfg)
+  if (t === 'mssql') return new SQLServerConnector(cfg)
   return new MySQLConnector(cfg)
 }
 
@@ -58,7 +58,7 @@ async function handleApi(req, res, parsed) {
   if (pathname === '/api/test-connection' && req.method === 'POST') {
     const body = await parseBody(req)
     const type = String(body.type || '').toLowerCase()
-    const allowedTypes = new Set(['mysql', 'oracle', 'sqlserver'])
+    const allowedTypes = new Set(['mysql', 'oracle', 'mssql'])
     if (!allowedTypes.has(type)) return respondJson(res, 400, { ok: false, online: false, error: 'invalid_type' })
     const host = String(body.host || '').trim()
     if (!host) return respondJson(res, 400, { ok: false, online: false, error: 'invalid_host' })
@@ -92,7 +92,7 @@ async function handleApi(req, res, parsed) {
   if (pathname === '/api/databases' && req.method === 'POST') {
     const body = await parseBody(req)
     const type = String(body.type || '').toLowerCase()
-    const allowedTypes = new Set(['mysql', 'oracle', 'sqlserver'])
+    const allowedTypes = new Set(['mysql', 'oracle', 'mssql'])
     if (!allowedTypes.has(type)) return respondJson(res, 400, { error: 'invalid_type' })
     const host = String(body.host || '').trim()
     if (!host) return respondJson(res, 400, { error: 'invalid_host' })
@@ -166,7 +166,7 @@ async function handleApi(req, res, parsed) {
   if (pathname.endsWith('/metrics') && req.method === 'GET') {
     const id = pathname.split('/')[3]
     const now = Date.now()
-    if (query.from && query.to) {
+    if (query.from !== undefined && query.to !== undefined) {
       const from = Number(query.from)
       const to = Number(query.to)
       if (!Number.isNaN(from) && !Number.isNaN(to) && to >= from) {
@@ -260,6 +260,49 @@ async function handleApi(req, res, parsed) {
     const r = await conn.topSlowQueries()
     return respondJson(res, 200, { data: r })
   }
+  if (pathname === '/api/maintenance/stats' && req.method === 'GET') {
+    const s = store.getMaintenanceStats()
+    return respondJson(res, 200, {
+      data: {
+        db_size_mb: Number((s.dbSizeBytes / (1024 * 1024)).toFixed(2)),
+        db_total_size_mb: Number((s.totalSizeBytes / (1024 * 1024)).toFixed(2)),
+        monitor_logs: s.metricsRows,
+        monitor_targets: s.targetsRows,
+        metrics_rows: s.metricsRows,
+        targets_rows: s.targetsRows
+      }
+    })
+  }
+  if (pathname === '/api/maintenance/config' && req.method === 'GET') {
+    const cfg = store.getMaintenanceConfig()
+    return respondJson(res, 200, { data: cfg })
+  }
+  if (pathname === '/api/maintenance/config' && req.method === 'POST') {
+    const body = await parseBody(req)
+    const days = Number(body.retention_days)
+    const time = String(body.cleanup_time || '').trim()
+    const retention_days = Number.isFinite(days) && days > 0 ? Math.floor(days) : 7
+    const cleanup_time = /^\d{2}:\d{2}$/.test(time) ? time : '03:00'
+    store.setConfig('retention_days', String(retention_days))
+    store.setConfig('cleanup_time', cleanup_time)
+    return respondJson(res, 200, { ok: true, data: { retention_days, cleanup_time } })
+  }
+  if (pathname === '/api/maintenance/cleanup' && req.method === 'POST') {
+    const body = await parseBody(req)
+    const days = Number(body.days)
+    const r = store.cleanupAndVacuum(Number.isFinite(days) && days > 0 ? Math.floor(days) : store.getMaintenanceConfig().retention_days)
+    return respondJson(res, 200, {
+      ok: true,
+      data: {
+        deleted_rows: r.deletedRows,
+        keep_days: r.keepDays,
+        db_size_mb_before: Number((r.before.dbSizeBytes / (1024 * 1024)).toFixed(2)),
+        db_size_mb_after: Number((r.after.dbSizeBytes / (1024 * 1024)).toFixed(2)),
+        db_total_size_mb_before: Number((r.before.totalSizeBytes / (1024 * 1024)).toFixed(2)),
+        db_total_size_mb_after: Number((r.after.totalSizeBytes / (1024 * 1024)).toFixed(2))
+      }
+    })
+  }
   return false
 }
 
@@ -324,17 +367,21 @@ const server = http.createServer(async (req, res) => {
 })
 
 function pollOnce() {
-  const keepHours = Number(process.env.RETAIN_HOURS || 24 * 7)
+  const cfg = store.getMaintenanceConfig()
+  const keepHours = Number(process.env.RETAIN_HOURS || cfg.retention_days * 24)
   const now = Date.now()
   const dbs = store.listTargets()
   for (const cfg of dbs) {
+    const configuredRole = String(cfg.repl_role || '').toLowerCase()
     const conn = connectorFor(cfg)
     conn.collectMetrics().then(m => {
-      const point = { ts: now, online: true, ...m }
+      const resolvedRole = String((m && m.role) || configuredRole || '').toLowerCase() || 'unknown'
+      const point = { ts: now, online: true, ...m, role: resolvedRole }
+      if (point.role !== 'slave' && (point.slaveDelay === undefined || point.slaveDelay === null)) point.slaveDelay = -1
       store.insertMetric(cfg.id, point, keepHours)
     }).catch(err => {
       logger.error(`Collect metrics failed for ${cfg.name}: ${err.message}`)
-      const point = { ts: now, online: false, sessions: 0, threadsRunning: 0, qps: 0, tps: 0, slowCount: 0, role: 'unknown', slaveDelay: -1 }
+      const point = { ts: now, online: false, sessions: 0, threadsRunning: 0, qps: 0, tps: 0, slowCount: 0, role: configuredRole || 'unknown', slaveDelay: -1 }
       store.insertMetric(cfg.id, point, keepHours)
     })
   }
@@ -345,6 +392,33 @@ function pollOnce() {
 const SAMPLE_MS = Number(process.env.SAMPLE_MS || 5000)
 pollOnce()
 setInterval(pollOnce, SAMPLE_MS)
+
+let maintenanceInFlight = false
+let lastMaintenanceRunDate = ''
+setInterval(() => {
+  if (maintenanceInFlight) return
+  const cfg = store.getMaintenanceConfig()
+  const time = String(cfg.cleanup_time || '03:00')
+  const m = time.match(/^(\d{2}):(\d{2})$/)
+  if (!m) return
+  const hh = Number(m[1])
+  const mm = Number(m[2])
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  if (today === lastMaintenanceRunDate) return
+  if (now.getHours() !== hh || now.getMinutes() !== mm) return
+  maintenanceInFlight = true
+  try {
+    store.cleanupAndVacuum(cfg.retention_days)
+    lastMaintenanceRunDate = today
+    logger.info(`Maintenance cleanup done: keep_days=${cfg.retention_days}`)
+  } catch (e) {
+    logger.error(`Maintenance cleanup failed: ${e && (e.message || e)}`)
+  } finally {
+    maintenanceInFlight = false
+  }
+}, 30 * 1000)
 
 const PORT = process.env.PORT || 8080
 const HOST = process.env.HOST || process.env.BIND_HOST || '0.0.0.0'

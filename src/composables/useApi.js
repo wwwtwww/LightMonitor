@@ -24,10 +24,10 @@ export function useApi() {
     try {
       const res = await axios.post(`${API_URL}/databases/${form.id}/test`)
       const r = res.data
-      if (r.ok) ElMessage.success(`连接成功 ${r.latencyMs}ms`)
-      else ElMessage.error(r.error || '连接失败')
+      if (r.ok) ElMessage.success(`Connected ${r.latencyMs}ms`)
+      else ElMessage.error(r.error || 'Connection failed')
     } catch (e) {
-      ElMessage.error('连接失败')
+      ElMessage.error('Connection failed')
     }
   }
 
@@ -40,19 +40,19 @@ export function useApi() {
       } else {
         await axios.post(`${API_URL}/databases`, payload)
       }
-      ElMessage.success('保存成功')
+      ElMessage.success('Saved')
       await fetchList()
       if (callback) callback()
     } catch (e) {
-      ElMessage.error('保存失败')
+      ElMessage.error('Save failed')
     }
   }
 
   const deleteTarget = async (id) => {
     try {
-      await ElMessageBox.confirm('确认删除?', '提示', { type: 'warning' })
+      await ElMessageBox.confirm('Delete this target?', 'Confirm', { type: 'warning' })
       await axios.delete(`${API_URL}/databases/${id}`)
-      ElMessage.success('已删除')
+      ElMessage.success('Deleted')
       await fetchList()
     } catch {}
   }
@@ -74,13 +74,13 @@ export function useApi() {
 
   const killSession = async (dbId, threadId) => {
     try {
-      await ElMessageBox.confirm(`确定强杀线程 ${threadId}?`, '警告', { type: 'error' })
+      await ElMessageBox.confirm(`Kill thread ${threadId}?`, 'Warning', { type: 'error' })
       const res = await axios.post(`${API_URL}/databases/${dbId}/mysql/kill`, { threadId })
       if (res.data.ok) {
-        ElMessage.success('已发送 KILL')
+        ElMessage.success('KILL sent')
         return true
       } else {
-        ElMessage.error(res.data.error || '操作失败')
+        ElMessage.error(res.data.error || 'Operation failed')
         return false
       }
     } catch {
@@ -106,13 +106,49 @@ export function useApi() {
         const query = new URLSearchParams()
         if (params.range) query.set('range', params.range)
         if (params.date) query.set('date', params.date)
-        if (params.from) query.set('from', String(params.from))
-        if (params.to) query.set('to', String(params.to))
+        if (params.from !== undefined && params.from !== null) query.set('from', String(params.from))
+        if (params.to !== undefined && params.to !== null) query.set('to', String(params.to))
         const url = `${API_URL}/databases/${id}/metrics${query.toString() ? `?${query.toString()}` : ''}`
         const res = await axios.get(url)
         return res.data.data || []
     } catch {
         return []
+    }
+  }
+
+  const getMaintenanceStats = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/maintenance/stats`)
+      return res.data.data || {}
+    } catch {
+      return {}
+    }
+  }
+
+  const getMaintenanceConfig = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/maintenance/config`)
+      return res.data.data || { retention_days: 7, cleanup_time: '03:00' }
+    } catch {
+      return { retention_days: 7, cleanup_time: '03:00' }
+    }
+  }
+
+  const saveMaintenanceConfig = async (cfg) => {
+    try {
+      const res = await axios.post(`${API_URL}/maintenance/config`, cfg)
+      return res.data.data || cfg
+    } catch {
+      throw new Error('save_failed')
+    }
+  }
+
+  const runMaintenanceCleanup = async (days) => {
+    try {
+      const res = await axios.post(`${API_URL}/maintenance/cleanup`, { days })
+      return res.data.data || {}
+    } catch {
+      throw new Error('cleanup_failed')
     }
   }
 
@@ -126,6 +162,10 @@ export function useApi() {
     getLocks,
     killSession,
     getTopSlow,
-    getMetrics
+    getMetrics,
+    getMaintenanceStats,
+    getMaintenanceConfig,
+    saveMaintenanceConfig,
+    runMaintenanceCleanup
   }
 }

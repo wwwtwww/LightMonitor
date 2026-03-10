@@ -8,6 +8,7 @@ __pycache__/
 node_modules/
 dist/
 ui/dist/
+.vite/
 
 # 数据库与发布包 (防隐私泄露和文件过大)
 monitor.db

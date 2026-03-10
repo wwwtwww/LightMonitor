@@ -12,6 +12,15 @@ function ensureDir() {
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true })
 }
 
+function safeStatSize(p) {
+  try {
+    if (!fs.existsSync(p)) return 0
+    return fs.statSync(p).size || 0
+  } catch {
+    return 0
+  }
+}
+
 function openDb() {
   if (db) return db
   ensureDir()
@@ -46,8 +55,13 @@ function openDb() {
       slave_delay INTEGER,
       slow_queries INTEGER,
       threads_running INTEGER,
+      extra_data TEXT,
       created_at INTEGER,
       FOREIGN KEY(target_id) REFERENCES targets(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS system_config (
+      key TEXT PRIMARY KEY,
+      value TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_metrics_target_time ON metrics(target_id, created_at);
   `)
@@ -58,6 +72,8 @@ function openDb() {
   try { db.exec(`ALTER TABLE targets ADD COLUMN remark TEXT`) } catch (_) {}
   try { db.exec(`ALTER TABLE metrics ADD COLUMN slave_delay INTEGER`) } catch (_) {}
   try { db.exec(`ALTER TABLE metrics ADD COLUMN role TEXT`) } catch (_) {}
+  try { db.exec(`ALTER TABLE metrics ADD COLUMN extra_data TEXT`) } catch (_) {}
+  try { db.exec(`UPDATE targets SET db_type = 'mssql' WHERE db_type = 'sqlserver'`) } catch (_) {}
 
   return db
 }
@@ -93,7 +109,8 @@ function toApiMetric(r) {
     qps: r.qps || 0,
     tps: r.tps || 0,
     slaveDelay: r.slave_delay ?? -1,
-    slowCount: r.slow_queries || 0
+    slowCount: r.slow_queries || 0,
+    extra_data: r.extra_data || ''
   }
 }
 
@@ -177,9 +194,15 @@ function latestMetric(id) {
 function insertMetric(targetId, point, keepHours) {
   const d = openDb()
   const ts = point.ts || nowMs()
+  const extraData =
+    (typeof point.extra_data === 'string' ? point.extra_data : null) ??
+    (point.extra_data && typeof point.extra_data === 'object' ? JSON.stringify(point.extra_data) : null) ??
+    (point.extraData && typeof point.extraData === 'object' ? JSON.stringify(point.extraData) : null) ??
+    (typeof point.extraData === 'string' ? point.extraData : null) ??
+    ''
   d.prepare(`
-    INSERT INTO metrics(target_id, status, role, connections, resp_time, qps, tps, slave_delay, slow_queries, threads_running, created_at)
-    VALUES(@target_id,@status,@role,@connections,@resp_time,@qps,@tps,@slave_delay,@slow_queries,@threads_running,@created_at)
+    INSERT INTO metrics(target_id, status, role, connections, resp_time, qps, tps, slave_delay, slow_queries, threads_running, extra_data, created_at)
+    VALUES(@target_id,@status,@role,@connections,@resp_time,@qps,@tps,@slave_delay,@slow_queries,@threads_running,@extra_data,@created_at)
   `).run({
     target_id: targetId,
     status: point.online ? 1 : 0,
@@ -191,6 +214,7 @@ function insertMetric(targetId, point, keepHours) {
     slave_delay: point.slaveDelay ?? -1,
     slow_queries: point.slowCount ?? point.slow_queries ?? 0,
     threads_running: point.threadsRunning ?? point.threads_running ?? 0,
+    extra_data: extraData,
     created_at: ts
   })
   if (typeof keepHours === 'number') {
@@ -214,6 +238,69 @@ function cleanupBefore(ts) {
   d.prepare(`DELETE FROM metrics WHERE created_at < ?`).run(ts)
 }
 
+function getDbPath() {
+  return dbPath
+}
+
+function getConfig(key) {
+  const d = openDb()
+  const r = d.prepare(`SELECT value FROM system_config WHERE key = ?`).get(String(key))
+  return r ? String(r.value ?? '') : null
+}
+
+function setConfig(key, value) {
+  const d = openDb()
+  d.prepare(`INSERT INTO system_config(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+    .run(String(key), String(value ?? ''))
+}
+
+function getMaintenanceConfig() {
+  const retentionDays = Number(getConfig('retention_days') ?? '')
+  const cleanupTime = String(getConfig('cleanup_time') ?? '').trim()
+  return {
+    retention_days: Number.isFinite(retentionDays) && retentionDays > 0 ? retentionDays : 7,
+    cleanup_time: /^\d{2}:\d{2}$/.test(cleanupTime) ? cleanupTime : '03:00'
+  }
+}
+
+function getMaintenanceStats() {
+  const d = openDb()
+  const dbSizeBytes = safeStatSize(dbPath)
+  const walSizeBytes = safeStatSize(`${dbPath}-wal`)
+  const shmSizeBytes = safeStatSize(`${dbPath}-shm`)
+  const metricsRows = Number(d.prepare(`SELECT COUNT(1) AS c FROM metrics`).get()?.c || 0)
+  const targetsRows = Number(d.prepare(`SELECT COUNT(1) AS c FROM targets`).get()?.c || 0)
+  return {
+    dbPath,
+    dbSizeBytes,
+    walSizeBytes,
+    shmSizeBytes,
+    totalSizeBytes: dbSizeBytes + walSizeBytes + shmSizeBytes,
+    metricsRows,
+    targetsRows
+  }
+}
+
+function cleanupAndVacuum(days) {
+  const d = openDb()
+  const n = Number(days)
+  const keepDays = Number.isFinite(n) && n > 0 ? Math.floor(n) : 7
+  const cutoff = Date.now() - keepDays * 24 * 3600 * 1000
+  const before = getMaintenanceStats()
+  const del = d.prepare(`DELETE FROM metrics WHERE created_at < ?`).run(cutoff)
+  try { d.pragma('wal_checkpoint(TRUNCATE)') } catch {}
+  d.exec('VACUUM')
+  try { d.pragma('wal_checkpoint(TRUNCATE)') } catch {}
+  const after = getMaintenanceStats()
+  return {
+    keepDays,
+    cutoff,
+    deletedRows: del?.changes ?? 0,
+    before,
+    after
+  }
+}
+
 module.exports = {
   init,
   listTargets,
@@ -224,5 +311,11 @@ module.exports = {
   latestMetric,
   insertMetric,
   rangeMetrics,
-  cleanupBefore
+  cleanupBefore,
+  getDbPath,
+  getConfig,
+  setConfig,
+  getMaintenanceConfig,
+  getMaintenanceStats,
+  cleanupAndVacuum
 }
