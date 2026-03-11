@@ -8,6 +8,8 @@ try {
 
 const pools = new Map()
 const prevStats = new Map() // id -> { ts, queries, commits, rollbacks }
+const slowCache = new Map() // id -> { ts, slowCount }
+const { shouldRefresh } = require('../utils/shouldRefresh')
 
 function hashSecret(s) {
   try {
@@ -101,15 +103,21 @@ class MySQLConnector extends BaseConnector {
       }
       prevStats.set(this.cfg.id, { ts: now, queries: s.queries, commits: s.commits, rollbacks: s.rollbacks })
       let slowCount = 0
-      try {
-        const [rows] = await conn.query(`
-          SELECT SUM(COUNT_STAR) AS c
-          FROM performance_schema.events_statements_summary_by_digest
-          WHERE AVG_TIMER_WAIT >= 5000000000
-        `)
-        slowCount = Number(rows?.[0]?.c || 0)
-      } catch (_) {
-        slowCount = 0
+      const cachedSlow = slowCache.get(this.cfg.id)
+      if (cachedSlow && !shouldRefresh(now, cachedSlow.ts, 30000)) {
+        slowCount = Number(cachedSlow.slowCount || 0)
+      } else {
+        try {
+          const [rows] = await conn.query(`
+            SELECT SUM(COUNT_STAR) AS c
+            FROM performance_schema.events_statements_summary_by_digest
+            WHERE AVG_TIMER_WAIT >= 5000000000
+          `)
+          slowCount = Number(rows?.[0]?.c || 0)
+          slowCache.set(this.cfg.id, { ts: now, slowCount })
+        } catch (_) {
+          slowCount = Number(cachedSlow?.slowCount || 0)
+        }
       }
 
       let role = 'master'

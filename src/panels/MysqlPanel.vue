@@ -1,47 +1,91 @@
 <template>
-  <div>
-    <el-card class="box-card" shadow="never" style="margin-bottom: 20px;">
-      <template #header>
-        <div class="panel-header">
-          <b>MySQL Metrics Trend</b>
-          <el-button size="small" type="primary" plain @click="showSlowDetails">Top Slow Queries</el-button>
-        </div>
-      </template>
-      <div class="charts-grid">
-        <div class="chart-item" v-for="conf in chartConfigs" :key="conf.id">
-          <div class="chart-header">
-            <span class="title">{{ conf.title }} ({{ rangeText }})</span>
-            <div class="agg-stats">
-              <span>Max: <b>{{ chartAggs[conf.id]?.max || 0 }}</b></span>
-              <span>Min: <b>{{ chartAggs[conf.id]?.min || 0 }}</b></span>
-              <span>Avg: <b>{{ chartAggs[conf.id]?.avg || 0 }}</b></span>
+  <div class="mysql-panel">
+    <div class="ops-strip">
+      <div class="ops-item" role="button" tabindex="0" @click="activeTab = 'locks'">
+        <div class="ops-label">Lock waits</div>
+        <el-tag size="small" :type="lockCount ? 'danger' : 'info'" effect="plain">{{ lockCount }}</el-tag>
+      </div>
+      <div class="ops-item" role="button" tabindex="0" @click="activeTab = 'slow'">
+        <div class="ops-label">Slow queries</div>
+        <el-tag size="small" type="warning" effect="plain">{{ slowCount }}</el-tag>
+      </div>
+      <div class="ops-hint">{{ rangeText }}</div>
+    </div>
+
+    <el-tabs v-model="activeTab" class="mysql-tabs">
+      <el-tab-pane label="Metrics" name="metrics">
+        <section class="lm-section">
+          <div class="lm-section-head">
+            <div class="lm-section-title">Metrics Trend</div>
+          </div>
+
+          <div class="charts-grid">
+            <div class="chart-card" v-for="conf in chartConfigs" :key="conf.id">
+              <div class="chart-head">
+                <div class="chart-title">{{ conf.title }}</div>
+                <div class="chart-agg">
+                  <span>Max <b class="lm-num">{{ chartAggs[conf.id]?.max || 0 }}</b></span>
+                  <span>Min <b class="lm-num">{{ chartAggs[conf.id]?.min || 0 }}</b></span>
+                  <span>Avg <b class="lm-num">{{ chartAggs[conf.id]?.avg || 0 }}</b></span>
+                </div>
+              </div>
+
+              <div v-if="conf.metric === 'slaveDelay' && roleValue !== 'slave'" class="chart-empty">
+                <div class="chart-empty-title">N/A</div>
+                <div class="chart-empty-sub">Seconds Behind Master is only available on slave.</div>
+              </div>
+              <div v-else :id="conf.id" class="chart-canvas"></div>
             </div>
           </div>
-          <div :id="conf.id" style="width: 100%; height: 280px;"></div>
-        </div>
-      </div>
-    </el-card>
+        </section>
+      </el-tab-pane>
 
-    <el-card shadow="never" style="margin-top: 20px; border-color: #F56C6C;">
-      <template #header>
-        <div style="display:flex; justify-content:space-between">
-          <b style="color: #F56C6C;">Lock Wait Monitor</b>
-          <el-button size="small" type="danger" plain @click="fetchLocksData">Refresh</el-button>
-        </div>
-      </template>
-      <el-table :data="lockData" :border="false" stripe size="small" empty-text="No lock waits">
-        <el-table-column prop="blocking_thread" label="Blocking" width="110" />
-        <el-table-column prop="waiting_thread" label="Waiting" width="110" />
-        <el-table-column prop="lock_duration" label="Duration (s)" width="120" align="right" header-align="right">
-          <template #default="scope"><span class="lm-num">{{ scope.row.lock_duration }}</span></template>
-        </el-table-column>
-        <el-table-column label="Actions" width="90">
-          <template #default="scope">
-            <el-button type="danger" size="small" @click="handleKill(scope.row.blocking_thread)">KILL</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
+      <el-tab-pane :label="locksTabLabel" name="locks">
+        <section class="lm-section lm-section-danger">
+          <div class="lm-section-head">
+            <div class="lm-section-title">Lock Wait Monitor</div>
+            <div class="lm-section-actions">
+              <el-button size="small" type="danger" plain @click="fetchLocksData">Refresh</el-button>
+            </div>
+          </div>
+
+          <el-table :data="lockData" :border="false" stripe size="small" empty-text="No lock waits">
+            <el-table-column prop="blocking_thread" label="Blocking" width="110" />
+            <el-table-column prop="waiting_thread" label="Waiting" width="110" />
+            <el-table-column prop="lock_duration" label="Duration (s)" width="120" align="right" header-align="right">
+              <template #default="scope"><span class="lm-num">{{ scope.row.lock_duration }}</span></template>
+            </el-table-column>
+            <el-table-column label="Actions" width="90">
+              <template #default="scope">
+                <el-button type="danger" size="small" @click="handleKill(scope.row.blocking_thread)">KILL</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </section>
+      </el-tab-pane>
+
+      <el-tab-pane :label="slowTabLabel" name="slow">
+        <section class="lm-section">
+          <div class="lm-section-head">
+            <div class="lm-section-title">Top Slow Queries</div>
+            <div class="lm-section-actions">
+              <el-button size="small" @click="refreshSlow">Refresh</el-button>
+              <el-button size="small" type="primary" plain @click="showSlowDetails">Open</el-button>
+            </div>
+          </div>
+
+          <el-table :data="slowData" :border="false" stripe size="small" empty-text="No data">
+            <el-table-column prop="exec_count" label="Count" width="100" align="right" header-align="right">
+              <template #default="scope"><span class="lm-num">{{ scope.row.exec_count }}</span></template>
+            </el-table-column>
+            <el-table-column prop="max_time" label="Avg Latency (ms)" width="160" align="right" header-align="right">
+              <template #default="scope"><span class="lm-num">{{ scope.row.max_time }}</span></template>
+            </el-table-column>
+            <el-table-column prop="sql_text" label="SQL" min-width="360" show-overflow-tooltip />
+          </el-table>
+        </section>
+      </el-tab-pane>
+    </el-tabs>
 
     <SlowQueryModal v-model:visible="slowDialogVisible" :data="slowData" />
   </div>
@@ -66,6 +110,7 @@ const { getLocks, killSession, getTopSlow, getMetrics } = useApi()
 const lockData = ref([])
 const slowData = ref([])
 const slowDialogVisible = ref(false)
+const activeTab = ref('metrics')
 
 const chartAggs = reactive({})
 let chartTimer = null
@@ -80,12 +125,24 @@ const chartConfigs = [
 ]
 
 const effectiveParams = computed(() => props.rangeParams || { range: '1h' })
+const latest = computed(() => props.target?.latest || {})
+const roleValue = computed(() => {
+  const lr = String(latest.value.role || '').toLowerCase()
+  if (lr && lr !== 'unknown') return lr
+  return String(props.target?.repl_role || '').toLowerCase()
+})
+const lockCount = computed(() => (lockData.value || []).length)
+const slowCount = computed(() => {
+  const n = Number(latest.value.slowCount)
+  if (!Number.isFinite(n) || n < 0) return 0
+  return n
+})
+const locksTabLabel = computed(() => `Locks (${lockCount.value})`)
+const slowTabLabel = computed(() => `Slow Queries (${slowCount.value})`)
 
-const drawSingleChart = async (conf) => {
+const drawSingleChart = async (conf, rawData) => {
   const dom = document.getElementById(conf.id)
   if (!dom) return
-
-  const rawData = await getMetrics(props.target.id, effectiveParams.value)
 
   const times = rawData.map(d => {
     const date = new Date(d.ts)
@@ -140,9 +197,16 @@ const initAllCharts = () => {
   if (chartsInFlight) return
   chartsInFlight = true
   nextTick(async () => {
-    await Promise.all(chartConfigs.map(drawSingleChart))
-    connectCharts()
-    chartsInFlight = false
+    try {
+      const rawData = await getMetrics(props.target.id, { ...effectiveParams.value, maxPoints: 720 })
+      await Promise.all(chartConfigs.map(async (c) => {
+        if (c.metric === 'slaveDelay' && roleValue.value !== 'slave') return
+        await drawSingleChart(c, rawData)
+      }))
+      connectCharts()
+    } finally {
+      chartsInFlight = false
+    }
   })
 }
 
@@ -160,10 +224,15 @@ const showSlowDetails = async () => {
   slowDialogVisible.value = true
 }
 
+const refreshSlow = async () => {
+  slowData.value = await getTopSlow(props.target.id)
+}
+
 watch(
-  () => [props.autoRefresh, props.isLive, effectiveParams.value],
+  () => [props.autoRefresh, props.isLive, effectiveParams.value, activeTab.value, roleValue.value],
   () => {
     clearInterval(chartTimer)
+    if (activeTab.value !== 'metrics') return
     initAllCharts()
     if (props.autoRefresh && props.isLive) chartTimer = setInterval(initAllCharts, 5000)
   },
@@ -172,6 +241,7 @@ watch(
 
 onMounted(() => {
   fetchLocksData()
+  refreshSlow()
 })
 
 onBeforeUnmount(() => {
@@ -184,16 +254,33 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.panel-header { display: flex; align-items: center; justify-content: space-between; }
-.charts-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.chart-item { background: #fff; padding: 20px; border-radius: 8px; box-shadow: var(--lm-shadow-md); }
-.chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-.chart-header .title { font-weight: bold; color: #303133; }
-.agg-stats { font-size: 12px; color: #606266; }
-.agg-stats span { margin-left: 15px; }
-.agg-stats b { color: #303133; }
+.mysql-panel { display: flex; flex-direction: column; gap: 16px; }
+.ops-strip { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ops-item { display: inline-flex; align-items: center; gap: 8px; background: #fff; border: var(--lm-border); border-radius: 12px; padding: 8px 10px; box-shadow: var(--lm-shadow-sm); cursor: pointer; user-select: none; }
+.ops-item:hover { border-color: #cbd5e1; }
+.ops-label { font-size: 12px; color: var(--lm-muted); }
+.ops-hint { margin-left: auto; font-size: 12px; color: var(--lm-muted); }
+.mysql-tabs :deep(.el-tabs__header) { margin: 0; }
+.mysql-tabs :deep(.el-tabs__nav-wrap::after) { display: none; }
+.mysql-tabs :deep(.el-tabs__item) { height: 34px; line-height: 34px; font-size: 13px; }
+.lm-section { background: #fff; border: var(--lm-border); border-radius: 12px; box-shadow: var(--lm-shadow-sm); padding: 14px 14px; }
+.lm-section-danger { border-color: #fecaca; }
+.lm-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.lm-section-title { font-size: 14px; font-weight: 800; color: var(--lm-text); }
+.lm-section-actions { display: inline-flex; align-items: center; gap: 8px; }
+.charts-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.chart-card { background: #fff; border: var(--lm-border); border-radius: 12px; padding: 12px 12px; }
+.chart-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.chart-title { font-size: 13px; font-weight: 800; color: var(--lm-text); }
+.chart-agg { display: inline-flex; gap: 10px; font-size: 12px; color: var(--lm-muted); flex-wrap: wrap; justify-content: flex-end; text-align: right; }
+.chart-agg b { color: var(--lm-text); font-weight: 800; }
+.chart-canvas { width: 100%; height: 260px; }
+.chart-empty { height: 260px; border-radius: 10px; background: #f8fafc; border: 1px dashed #cbd5e1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+.chart-empty-title { font-size: 14px; font-weight: 900; color: #334155; }
+.chart-empty-sub { font-size: 12px; color: #64748b; }
 @media (max-width: 900px) {
   .charts-grid { grid-template-columns: 1fr; }
+  .ops-hint { width: 100%; margin-left: 0; }
 }
 </style>
 

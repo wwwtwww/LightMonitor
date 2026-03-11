@@ -101,6 +101,15 @@ export function useApi() {
     }
   }
 
+  const getMssqlBlocking = async (id) => {
+    try {
+      const res = await axios.get(`${API_URL}/databases/${id}/mssql/blocking`)
+      return res.data.data || []
+    } catch {
+      return []
+    }
+  }
+
   const getMetrics = async (id, params = {}) => {
     try {
         const query = new URLSearchParams()
@@ -108,6 +117,8 @@ export function useApi() {
         if (params.date) query.set('date', params.date)
         if (params.from !== undefined && params.from !== null) query.set('from', String(params.from))
         if (params.to !== undefined && params.to !== null) query.set('to', String(params.to))
+        if (params.maxPoints !== undefined && params.maxPoints !== null) query.set('maxPoints', String(params.maxPoints))
+        if (params.stepMs !== undefined && params.stepMs !== null) query.set('stepMs', String(params.stepMs))
         const url = `${API_URL}/databases/${id}/metrics${query.toString() ? `?${query.toString()}` : ''}`
         const res = await axios.get(url)
         return res.data.data || []
@@ -116,9 +127,10 @@ export function useApi() {
     }
   }
 
-  const getMaintenanceStats = async () => {
+  const getMaintenanceStats = async (includeCounts = false) => {
     try {
-      const res = await axios.get(`${API_URL}/maintenance/stats`)
+      const url = includeCounts ? `${API_URL}/maintenance/stats?includeCounts=1` : `${API_URL}/maintenance/stats`
+      const res = await axios.get(url)
       return res.data.data || {}
     } catch {
       return {}
@@ -143,9 +155,12 @@ export function useApi() {
     }
   }
 
-  const runMaintenanceCleanup = async (days) => {
+  const runMaintenanceCleanup = async (days, options = {}) => {
     try {
-      const res = await axios.post(`${API_URL}/maintenance/cleanup`, { days })
+      const payload = { days }
+      if (options.vacuum === true) payload.vacuum = true
+      if (options.batchSize !== undefined && options.batchSize !== null) payload.batchSize = options.batchSize
+      const res = await axios.post(`${API_URL}/maintenance/cleanup`, payload)
       return res.data.data || {}
     } catch {
       throw new Error('cleanup_failed')
@@ -162,6 +177,7 @@ export function useApi() {
     getLocks,
     killSession,
     getTopSlow,
+    getMssqlBlocking,
     getMetrics,
     getMaintenanceStats,
     getMaintenanceConfig,

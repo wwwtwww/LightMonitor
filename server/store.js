@@ -1,10 +1,11 @@
 const fs = require('fs')
 const path = require('path')
 const Database = require('better-sqlite3')
+const { resolveDbPaths } = require('./dbpath')
 
-const defaultDataDir = path.join(__dirname, '..', 'data')
-const dataDir = process.env.LIGHTMONITOR_DATA_DIR || process.env.DATA_DIR || defaultDataDir
-const dbPath = process.env.LIGHTMONITOR_DB_PATH || process.env.DB_PATH || path.join(dataDir, 'monitor.db')
+const resolved = resolveDbPaths(__dirname, process.env, fs.existsSync)
+const dataDir = resolved.dataDir
+const dbPath = resolved.dbPath
 
 let db
 
@@ -21,11 +22,37 @@ function safeStatSize(p) {
   }
 }
 
+function safePragma(d, stmt, simple = true) {
+  try {
+    return d.pragma(stmt, { simple })
+  } catch {
+    return null
+  }
+}
+
+function safeExplain(d, sql, params) {
+  try {
+    const st = d.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+    return st.all(...(Array.isArray(params) ? params : []))
+  } catch {
+    return []
+  }
+}
+
 function openDb() {
   if (db) return db
   ensureDir()
   db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
+  try { db.pragma('synchronous = NORMAL') } catch {}
+  try { db.pragma('temp_store = MEMORY') } catch {}
+  try { db.pragma('cache_size = -65536') } catch {}
+  try {
+    const mmapMb = Number(process.env.DB_MMAP_MB || 512)
+    if (Number.isFinite(mmapMb) && mmapMb > 0) db.pragma(`mmap_size = ${Math.floor(mmapMb * 1024 * 1024)}`)
+  } catch {}
+  try { db.pragma('wal_autocheckpoint = 1000') } catch {}
+  try { db.pragma('busy_timeout = 5000') } catch {}
   db.pragma('foreign_keys = ON')
   db.exec(`
     CREATE TABLE IF NOT EXISTS targets (
@@ -63,7 +90,9 @@ function openDb() {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+    CREATE INDEX IF NOT EXISTS idx_metrics_time ON metrics(created_at);
     CREATE INDEX IF NOT EXISTS idx_metrics_target_time ON metrics(target_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_metrics_target_time_desc ON metrics(target_id, created_at DESC);
   `)
   
   // Migration for new columns
@@ -74,6 +103,7 @@ function openDb() {
   try { db.exec(`ALTER TABLE metrics ADD COLUMN role TEXT`) } catch (_) {}
   try { db.exec(`ALTER TABLE metrics ADD COLUMN extra_data TEXT`) } catch (_) {}
   try { db.exec(`UPDATE targets SET db_type = 'mssql' WHERE db_type = 'sqlserver'`) } catch (_) {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_metrics_time ON metrics(created_at)`) } catch (_) {}
 
   return db
 }
@@ -105,6 +135,7 @@ function toApiMetric(r) {
     online: !!r.status,
     role: r.role || '',
     sessions: r.connections || 0,
+    resp_time: r.resp_time || 0,
     threadsRunning: r.threads_running || 0,
     qps: r.qps || 0,
     tps: r.tps || 0,
@@ -191,6 +222,27 @@ function latestMetric(id) {
   return r ? toApiMetric(r) : null
 }
 
+function latestMetrics(ids) {
+  const list = Array.isArray(ids) ? ids.filter(Boolean).map(String) : []
+  if (!list.length) return {}
+  const d = openDb()
+  const placeholders = list.map(() => '?').join(',')
+  const rows = d.prepare(`
+    SELECT m.*
+    FROM metrics m
+    INNER JOIN (
+      SELECT target_id, MAX(created_at) AS created_at
+      FROM metrics
+      WHERE target_id IN (${placeholders})
+      GROUP BY target_id
+    ) g
+      ON m.target_id = g.target_id AND m.created_at = g.created_at
+  `).all(...list)
+  const out = {}
+  for (const r of rows) out[String(r.target_id)] = toApiMetric(r)
+  return out
+}
+
 function insertMetric(targetId, point, keepHours) {
   const d = openDb()
   const ts = point.ts || nowMs()
@@ -217,19 +269,53 @@ function insertMetric(targetId, point, keepHours) {
     extra_data: extraData,
     created_at: ts
   })
-  if (typeof keepHours === 'number') {
-    const cutoff = Date.now() - keepHours * 3600 * 1000
-    d.prepare(`DELETE FROM metrics WHERE created_at < ?`).run(cutoff)
-  }
 }
 
-function rangeMetrics(targetId, fromTs, toTs) {
+function rangeMetrics(targetId, fromTs, toTs, options = {}) {
   const d = openDb()
-  const rows = d.prepare(`
-    SELECT * FROM metrics
-    WHERE target_id = ? AND created_at BETWEEN ? AND ?
-    ORDER BY created_at ASC
-  `).all(targetId, fromTs, toTs)
+  const maxPoints = Number(options.maxPoints)
+  let stepMs = Number(options.stepMs)
+  const span = Math.max(0, Number(toTs) - Number(fromTs))
+  if ((!Number.isFinite(stepMs) || stepMs <= 0) && Number.isFinite(maxPoints) && maxPoints > 0 && span > 0) {
+    stepMs = Math.ceil(span / Math.floor(maxPoints))
+  }
+  let rows
+  if (Number.isFinite(stepMs) && stepMs > 0) {
+    try {
+      rows = d.prepare(`
+        SELECT
+          created_at, status, role, connections, resp_time, qps, tps, slave_delay, slow_queries, threads_running, extra_data
+        FROM (
+          SELECT
+            created_at, status, role, connections, resp_time, qps, tps, slave_delay, slow_queries, threads_running, extra_data,
+            ROW_NUMBER() OVER (PARTITION BY CAST(created_at / ? AS INTEGER) ORDER BY created_at DESC) AS rn
+          FROM metrics
+          WHERE target_id = ? AND created_at BETWEEN ? AND ?
+        )
+        WHERE rn = 1
+        ORDER BY created_at ASC
+      `).all(stepMs, targetId, fromTs, toTs)
+    } catch {
+      rows = d.prepare(`
+        SELECT m.*
+        FROM metrics m
+        INNER JOIN (
+          SELECT MAX(created_at) AS created_at
+          FROM metrics
+          WHERE target_id = ? AND created_at BETWEEN ? AND ?
+          GROUP BY CAST(created_at / ? AS INTEGER)
+        ) g
+        ON m.target_id = ? AND m.created_at = g.created_at
+        ORDER BY m.created_at ASC
+      `).all(targetId, fromTs, toTs, stepMs, targetId)
+    }
+  } else {
+    rows = d.prepare(`
+      SELECT * FROM metrics
+      WHERE target_id = ? AND created_at BETWEEN ? AND ?
+      ORDER BY created_at ASC
+    `).all(targetId, fromTs, toTs)
+  }
   return rows.map(toApiMetric)
 }
 
@@ -263,12 +349,13 @@ function getMaintenanceConfig() {
   }
 }
 
-function getMaintenanceStats() {
+function getMaintenanceStats(options = {}) {
   const d = openDb()
   const dbSizeBytes = safeStatSize(dbPath)
   const walSizeBytes = safeStatSize(`${dbPath}-wal`)
   const shmSizeBytes = safeStatSize(`${dbPath}-shm`)
-  const metricsRows = Number(d.prepare(`SELECT COUNT(1) AS c FROM metrics`).get()?.c || 0)
+  const includeCounts = options.includeCounts === true
+  const metricsRows = includeCounts ? Number(d.prepare(`SELECT COUNT(1) AS c FROM metrics`).get()?.c || 0) : null
   const targetsRows = Number(d.prepare(`SELECT COUNT(1) AS c FROM targets`).get()?.c || 0)
   return {
     dbPath,
@@ -281,24 +368,139 @@ function getMaintenanceStats() {
   }
 }
 
-function cleanupAndVacuum(days) {
+function getDbDiagnostics(options = {}) {
   const d = openDb()
-  const n = Number(days)
+  const includeCounts = options.includeCounts === true
+  const s = getMaintenanceStats({ includeCounts })
+  const totalSizeBytes = (s.dbSizeBytes || 0) + (s.walSizeBytes || 0) + (s.shmSizeBytes || 0)
+
+  const pragmas = {
+    journal_mode: safePragma(d, 'journal_mode'),
+    synchronous: safePragma(d, 'synchronous'),
+    temp_store: safePragma(d, 'temp_store'),
+    cache_size: safePragma(d, 'cache_size'),
+    page_size: safePragma(d, 'page_size'),
+    wal_autocheckpoint: safePragma(d, 'wal_autocheckpoint'),
+    busy_timeout: safePragma(d, 'busy_timeout'),
+    foreign_keys: safePragma(d, 'foreign_keys'),
+    auto_vacuum: safePragma(d, 'auto_vacuum')
+  }
+
+  const idxMetrics = safePragma(d, `index_list('metrics')`, false) || []
+  const idxTargets = safePragma(d, `index_list('targets')`, false) || []
+
+  const walCheckpoint = safePragma(d, 'wal_checkpoint(PASSIVE)', false)
+
+  const targetId = String(options.targetId || '')
+  const now = Date.now()
+  const toTs = Number.isFinite(Number(options.toTs)) ? Number(options.toTs) : now
+  const fromTs = Number.isFinite(Number(options.fromTs)) ? Number(options.fromTs) : (toTs - 3600 * 1000)
+  const maxPoints = Number.isFinite(Number(options.maxPoints)) ? Math.floor(Number(options.maxPoints)) : 720
+  let stepMs = Number(options.stepMs)
+  const span = Math.max(0, toTs - fromTs)
+  if ((!Number.isFinite(stepMs) || stepMs <= 0) && Number.isFinite(maxPoints) && maxPoints > 0 && span > 0) stepMs = Math.ceil(span / Math.floor(maxPoints))
+  if (!Number.isFinite(stepMs) || stepMs <= 0) stepMs = 0
+
+  const plans = {}
+  if (targetId) {
+    plans.latestMetric = safeExplain(d, `SELECT * FROM metrics WHERE target_id = ? ORDER BY created_at DESC LIMIT 1`, [targetId])
+    if (stepMs > 0) {
+      plans.rangeMetricsSample = safeExplain(d, `
+        SELECT m.*
+        FROM metrics m
+        INNER JOIN (
+          SELECT MAX(created_at) AS created_at
+          FROM metrics
+          WHERE target_id = ? AND created_at BETWEEN ? AND ?
+          GROUP BY CAST(created_at / ? AS INTEGER)
+        ) g
+        ON m.target_id = ? AND m.created_at = g.created_at
+        ORDER BY m.created_at ASC
+      `, [targetId, fromTs, toTs, stepMs, targetId])
+    } else {
+      plans.rangeMetricsSample = safeExplain(d, `SELECT * FROM metrics WHERE target_id = ? AND created_at BETWEEN ? AND ? ORDER BY created_at ASC`, [targetId, fromTs, toTs])
+    }
+  }
+
+  return {
+    dbPath: s.dbPath,
+    sizes: {
+      dbSizeBytes: s.dbSizeBytes || 0,
+      walSizeBytes: s.walSizeBytes || 0,
+      shmSizeBytes: s.shmSizeBytes || 0,
+      totalSizeBytes
+    },
+    counts: (includeCounts && Number.isFinite(Number(s.metricsRows))) ? {
+      metricsRows: s.metricsRows,
+      targetsRows: s.targetsRows
+    } : null,
+    pragmas,
+    walCheckpoint,
+    indexes: {
+      metrics: idxMetrics,
+      targets: idxTargets
+    },
+    explain: {
+      targetId: targetId || null,
+      fromTs,
+      toTs,
+      stepMs,
+      maxPoints,
+      plans
+    }
+  }
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function cleanupOldMetrics(options = {}) {
+  const d = openDb()
+  const n = Number(options.days)
   const keepDays = Number.isFinite(n) && n > 0 ? Math.floor(n) : 7
   const cutoff = Date.now() - keepDays * 24 * 3600 * 1000
-  const before = getMaintenanceStats()
-  const del = d.prepare(`DELETE FROM metrics WHERE created_at < ?`).run(cutoff)
-  try { d.pragma('wal_checkpoint(TRUNCATE)') } catch {}
-  d.exec('VACUUM')
-  try { d.pragma('wal_checkpoint(TRUNCATE)') } catch {}
-  const after = getMaintenanceStats()
-  return {
-    keepDays,
-    cutoff,
-    deletedRows: del?.changes ?? 0,
-    before,
-    after
+  const batchSize = Number.isFinite(Number(options.batchSize)) && Number(options.batchSize) > 0 ? Math.floor(Number(options.batchSize)) : 5000
+  const yieldMs = Number.isFinite(Number(options.yieldMs)) && Number(options.yieldMs) >= 0 ? Math.floor(Number(options.yieldMs)) : 0
+  const vacuum = options.vacuum === true
+  const walTruncate = options.walTruncate !== false
+
+  const before = getMaintenanceStats({ includeCounts: false })
+
+  const delStmt = d.prepare(`
+    DELETE FROM metrics
+    WHERE id IN (
+      SELECT id FROM metrics
+      WHERE created_at < ?
+      ORDER BY created_at
+      LIMIT ?
+    )
+  `)
+
+  let deletedRows = 0
+  while (true) {
+    const r = delStmt.run(cutoff, batchSize)
+    const changes = r?.changes ?? 0
+    deletedRows += changes
+    if (changes <= 0) break
+    if (yieldMs > 0) await sleep(yieldMs)
+    else await sleep(0)
   }
+
+  let vacuumRan = false
+  if (walTruncate) {
+    try { d.pragma('wal_checkpoint(TRUNCATE)') } catch {}
+  }
+  if (vacuum) {
+    d.exec('VACUUM')
+    vacuumRan = true
+    if (walTruncate) {
+      try { d.pragma('wal_checkpoint(TRUNCATE)') } catch {}
+    }
+  }
+
+  const after = getMaintenanceStats({ includeCounts: false })
+  return { keepDays, cutoff, batchSize, deletedRows, vacuumRan, before, after }
 }
 
 module.exports = {
@@ -309,6 +511,7 @@ module.exports = {
   updateTarget,
   deleteTarget,
   latestMetric,
+  latestMetrics,
   insertMetric,
   rangeMetrics,
   cleanupBefore,
@@ -317,5 +520,6 @@ module.exports = {
   setConfig,
   getMaintenanceConfig,
   getMaintenanceStats,
-  cleanupAndVacuum
+  getDbDiagnostics,
+  cleanupOldMetrics
 }

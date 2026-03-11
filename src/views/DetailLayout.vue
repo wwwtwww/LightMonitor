@@ -9,7 +9,7 @@
           <el-breadcrumb-item>
             <span class="crumb-link" @click="emit('back')">{{ typeText }}</span>
           </el-breadcrumb-item>
-          <el-breadcrumb-item>{{ target.name || '—' }}</el-breadcrumb-item>
+          <el-breadcrumb-item>{{ crumbSystem }}</el-breadcrumb-item>
         </el-breadcrumb>
       </div>
 
@@ -68,47 +68,101 @@
       </div>
     </div>
 
-    <el-card shadow="never" style="margin-bottom: 16px;">
-      <el-row :gutter="12">
-        <el-col :span="4">
-          <div class="info-item">
-            <div class="info-label">Status</div>
-            <div class="info-value">
-              <el-tag :type="latest.online ? 'success' : 'danger'" effect="dark">{{ latest.online ? 'Online' : 'Offline' }}</el-tag>
-            </div>
+    <div class="summary-grid" style="margin-bottom: 16px;">
+      <el-card class="summary-card" shadow="never">
+        <div class="instance-title">
+          <div>
+            <div class="instance-name">{{ target.name || '—' }}</div>
+            <div class="instance-sub">{{ hostText }}</div>
           </div>
-        </el-col>
-        <el-col :span="6">
-          <div class="info-item">
-            <div class="info-label">Type / Role</div>
-            <div class="info-value">
-              <div class="type-role">
-                <el-tag effect="plain">{{ typeText }}</el-tag>
-                <el-tag :type="roleTagType(roleValue)" effect="plain">{{ roleLabel(roleValue) }}</el-tag>
+          <div class="status-cell">
+            <span class="dot" :class="latest.online ? 'dot-ok' : 'dot-bad'" aria-hidden="true"></span>
+            <span class="status-text">{{ latest.online ? 'Online' : 'Offline' }}</span>
+          </div>
+        </div>
+
+        <div class="instance-meta">
+          <div class="meta-row">
+            <div class="meta-label">Badges</div>
+            <div class="meta-value">
+              <div class="badges">
+                <span class="lm-badge" :class="typeBadgeClass">{{ typeText }}</span>
+                <span class="lm-badge" :class="roleBadgeClass">{{ roleLabel(roleValue) }}</span>
               </div>
             </div>
           </div>
-        </el-col>
-        <el-col :span="6">
-          <div class="info-item">
-            <div class="info-label">Address</div>
-            <div class="info-value">{{ hostText }}</div>
+          <div class="meta-row">
+            <div class="meta-label">System Name</div>
+            <div class="meta-value">{{ crumbSystem }}</div>
           </div>
-        </el-col>
-        <el-col :span="4">
-          <div class="info-item">
-            <div class="info-label">Response (ms)</div>
-            <div class="info-value info-value-num lm-num">{{ respMsText }}</div>
-          </div>
-        </el-col>
-        <el-col :span="4">
-          <div class="info-item">
-            <div class="info-label">Connections</div>
-            <div class="info-value info-value-num lm-num">{{ latest.sessions || 0 }}</div>
-          </div>
-        </el-col>
-      </el-row>
-    </el-card>
+        </div>
+      </el-card>
+
+      <div v-if="typeValue === 'mssql'" class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Batch Requests (/s)</div>
+          <div class="kpi-value kpi-value-num lm-num">{{ qpsText }}</div>
+          <div class="kpi-sub">Latest</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">User Connections</div>
+          <div class="kpi-value kpi-value-num lm-num">{{ formatNumber(latest.sessions || 0) }}</div>
+          <div class="kpi-sub">Latest</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Running Requests</div>
+          <div class="kpi-value kpi-value-num lm-num">{{ threadsText }}</div>
+          <div class="kpi-sub">Latest</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Blocking Sessions</div>
+          <div class="kpi-value kpi-value-num lm-num">{{ mssqlBlockingText }}</div>
+          <div class="kpi-sub">Latest</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Top Wait</div>
+          <div class="kpi-value kpi-value-num lm-num">{{ mssqlTopWaitText }}</div>
+          <div class="kpi-sub">Latest</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Disk Read Latency (ms)</div>
+          <div class="kpi-value kpi-value-num lm-num">{{ mssqlDiskReadText }}</div>
+          <div class="kpi-sub">Latest</div>
+        </div>
+      </div>
+      <div v-else class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Response (ms)</div>
+          <div class="kpi-value kpi-value-num lm-num">{{ respMsText }}</div>
+          <div class="kpi-sub">Latest</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Connections</div>
+          <div class="kpi-value kpi-value-num lm-num">{{ formatNumber(latest.sessions || 0) }}</div>
+          <div class="kpi-sub">Latest</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Threads Running</div>
+          <div class="kpi-value kpi-value-num lm-num">{{ threadsText }}</div>
+          <div class="kpi-sub">Latest</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">QPS</div>
+          <div class="kpi-value kpi-value-num lm-num">{{ qpsText }}</div>
+          <div class="kpi-sub">Latest</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">TPS</div>
+          <div class="kpi-value kpi-value-num lm-num">{{ tpsText }}</div>
+          <div class="kpi-sub">Latest</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Seconds Behind Master</div>
+          <div class="kpi-value kpi-value-num lm-num">{{ delayText }}</div>
+          <div class="kpi-sub">{{ roleValue === 'slave' ? 'Slave only' : 'N/A' }}</div>
+        </div>
+      </div>
+    </div>
 
     <component
       :is="panelComponent"
@@ -124,6 +178,7 @@
 
 <script setup>
 import { computed, defineEmits, defineProps, ref } from 'vue'
+import { formatNumber } from '../utils/formatNumber'
 import MysqlPanel from '../panels/MysqlPanel.vue'
 import SqlServerPanel from '../panels/SqlServerPanel.vue'
 import OraclePanel from '../panels/OraclePanel.vue'
@@ -146,6 +201,8 @@ const autoRefresh = ref(true)
 const latest = computed(() => props.target.latest || {})
 const hostText = computed(() => [props.target.host, props.target.port].filter(Boolean).join(':') || '—')
 const typeText = computed(() => (props.target.type || '').toUpperCase() || '—')
+const typeValue = computed(() => String(props.target.type || '').toLowerCase())
+const crumbSystem = computed(() => props.target.system_name || props.target.business_system || props.target.name || '—')
 
 const roleValue = computed(() => {
   const lr = String(latest.value.role || '').toLowerCase()
@@ -153,13 +210,72 @@ const roleValue = computed(() => {
   return String(props.target.repl_role || '').toLowerCase()
 })
 const roleLabel = (r) => (r === 'master' ? 'Master' : r === 'slave' ? 'Slave' : r === 'standalone' ? 'Standalone' : 'Unknown')
-const roleTagType = (r) => (r === 'master' ? 'success' : r === 'slave' ? 'warning' : r === 'standalone' ? 'info' : '')
+const typeBadgeClass = computed(() => (typeValue.value === 'mysql' ? 'lm-badge-mysql' : typeValue.value === 'mssql' ? 'lm-badge-mssql' : typeValue.value === 'oracle' ? 'lm-badge-oracle' : ''))
+const roleBadgeClass = computed(() => (roleValue.value === 'master' ? 'lm-badge-master' : roleValue.value === 'slave' ? 'lm-badge-slave' : roleValue.value === 'standalone' ? 'lm-badge-standalone' : ''))
 
 const respMsText = computed(() => {
   const v = latest.value.resp_time
   const n = Number(v)
   if (!Number.isFinite(n)) return '—'
   return String(Math.round(n))
+})
+
+const qpsText = computed(() => {
+  const n = Number(latest.value.qps)
+  if (!Number.isFinite(n)) return '—'
+  return n.toFixed(2)
+})
+
+const tpsText = computed(() => {
+  const n = Number(latest.value.tps)
+  if (!Number.isFinite(n)) return '—'
+  return n.toFixed(2)
+})
+
+const threadsText = computed(() => {
+  const n = Number(latest.value.threadsRunning)
+  if (!Number.isFinite(n)) return '—'
+  return formatNumber(n)
+})
+
+const delayText = computed(() => {
+  if (roleValue.value !== 'slave') return '—'
+  const n = Number(latest.value.slaveDelay)
+  if (!Number.isFinite(n) || n < 0) return '—'
+  return formatNumber(n)
+})
+
+const parseExtra = (m) => {
+  try {
+    const s = m?.extra_data
+    if (!s) return {}
+    if (typeof s === 'object') return s
+    return JSON.parse(String(s))
+  } catch {
+    return {}
+  }
+}
+
+const mssqlExtra = computed(() => parseExtra(latest.value))
+
+const mssqlBlockingText = computed(() => {
+  const n = Number(mssqlExtra.value.blockingSessions)
+  if (!Number.isFinite(n)) return '—'
+  return formatNumber(n)
+})
+
+const mssqlTopWaitText = computed(() => {
+  const cat = String(mssqlExtra.value.topWaitCategory || '').toUpperCase()
+  const pct = Number(mssqlExtra.value.topWaitPct)
+  if (!cat) return '—'
+  if (!Number.isFinite(pct) || pct <= 0) return cat
+  return `${cat} ${pct.toFixed(0)}%`
+})
+
+const mssqlDiskReadText = computed(() => {
+  const n = Number(mssqlExtra.value.diskReadLatencyMs)
+  if (!Number.isFinite(n)) return '—'
+  return n.toFixed(1)
 })
 
 const customActive = computed(() => !!(appliedCustomStartTime.value && appliedCustomEndTime.value))
@@ -201,7 +317,9 @@ const disableEndDate = (d) => {
   if (t > Date.now()) return true
   const s = parseDate(customStartTime.value)
   if (!s) return false
-  return t < s.getTime()
+  const endDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const startDay = new Date(s.getFullYear(), s.getMonth(), s.getDate()).getTime()
+  return endDay < startDay
 }
 
 const rangeText = computed(() => {
@@ -266,14 +384,40 @@ const handleCustomApply = () => {
 .crumb-link:hover { color: var(--lm-text); }
 .auto-refresh { display: flex; align-items: center; gap: 8px; }
 .auto-refresh-label { font-size: 12px; color: #6b7280; }
-.info-item { background: #fff; border-radius: 10px; padding: 12px 14px; box-shadow: var(--lm-shadow-sm); border: var(--lm-border); }
-.info-label { font-size: 11px; color: var(--lm-muted); letter-spacing: 0.02em; }
-.info-value { margin-top: 6px; font-size: 16px; font-weight: 700; color: var(--lm-text); }
-.info-value-num { text-align: right; }
-.type-role { display: inline-flex; align-items: center; gap: 6px; }
+.lm-header { position: sticky; top: 16px; z-index: 20; background: rgba(255, 255, 255, 0.86); backdrop-filter: blur(10px); }
+.summary-grid { display: grid; grid-template-columns: 360px 1fr; gap: 16px; }
+.summary-card { border-radius: 12px; border: var(--lm-border); box-shadow: var(--lm-shadow-sm); }
+.summary-card :deep(.el-card__body) { padding: 14px 14px; }
+.instance-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.instance-name { font-size: 16px; font-weight: 800; color: var(--lm-text); line-height: 1.2; }
+.instance-sub { margin-top: 4px; font-size: 12px; color: var(--lm-muted); }
+.status-cell { display: inline-flex; align-items: center; gap: 8px; }
+.dot { width: 8px; height: 8px; border-radius: 9999px; display: inline-block; }
+.dot-ok { background: #10b981; }
+.dot-bad { background: #ef4444; }
+.status-text { color: #374151; font-weight: 700; font-size: 13px; }
+.instance-meta { margin-top: 12px; display: grid; grid-template-columns: 1fr; gap: 10px; }
+.meta-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.meta-label { font-size: 11px; color: var(--lm-muted); }
+.meta-value { font-size: 13px; font-weight: 700; color: var(--lm-text); text-align: right; }
+.badges { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.kpi-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.kpi-card { background: #fff; border-radius: 12px; border: var(--lm-border); box-shadow: var(--lm-shadow-sm); padding: 12px 14px; }
+.kpi-label { font-size: 11px; color: var(--lm-muted); letter-spacing: 0.02em; }
+.kpi-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--lm-text); line-height: 1.1; }
+.kpi-value-num { text-align: right; }
+.kpi-sub { margin-top: 6px; font-size: 12px; color: var(--lm-muted); text-align: right; }
 .custom-popover { display: flex; flex-direction: column; gap: 10px; }
 .custom-field { display: flex; flex-direction: column; gap: 6px; }
 .custom-label { font-size: 12px; color: #6b7280; }
 .custom-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
+@media (max-width: 1100px) {
+  .summary-grid { grid-template-columns: 1fr; }
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .kpi-grid { grid-template-columns: 1fr; }
+  .lm-header { top: 0; border-radius: 0; }
+}
 </style>
 

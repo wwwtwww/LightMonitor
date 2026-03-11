@@ -66,15 +66,7 @@ async function pack() {
       console.warn(`跳过缺失项: ${item}`);
     }
   }
-
-  // 特殊处理：node_modules (必须包含)
-  const nm = path.join(root, 'node_modules');
-  if (fs.existsSync(nm)) {
-    console.log('添加 node_modules (这可能需要一些时间)...');
-    archive.directory(nm, 'node_modules');
-  } else {
-    console.warn('警告: node_modules 不存在！打包出的程序可能无法运行。请先运行 npm install。');
-  }
+  console.log('不包含 node_modules（首次运行将自动安装依赖）');
 
   // 特殊处理：package-lock.json (如果存在)
   const lock = path.join(root, 'package-lock.json');

@@ -1,8 +1,8 @@
-LightMonitor 离线部署包使用说明
+LightMonitor 部署包使用说明
 ================================
 
-本压缩包包含 LightMonitor 数据库监控工具的所有必需文件和依赖。
-适用于无网络连接的测试或生产环境。
+本压缩包包含 LightMonitor 数据库监控工具的运行文件，不包含 node_modules。
+首次启动会自动安装生产依赖（需要可用的 npm 与网络访问）。
 
 前提条件
 --------
@@ -35,7 +35,7 @@ node server/index.js
 常见问题
 --------
 Q: 启动时提示缺少模块？
-A: 请确保 `node_modules` 目录完整解压且存在。本包已包含所有依赖，无需联网安装。
+A: 首次启动会自动执行 `npm i --omit=dev` 安装依赖，请确保目标机器可联网并可访问 npm registry。
 
 Q: 页面显示空白？
 A: 请确保使用现代浏览器（Chrome, Edge, Firefox 等）。

@@ -12,7 +12,13 @@
     "release": "node scripts/release.js",
     "dev": "vite",
     "seed:testdata": "node scripts/seed_testdata.js",
-    "build": "vite build"
+    "build": "vite build",
+    "test:custom-range": "node --test tests/custom-range.unit.test.cjs",
+    "test:mssql": "node --test tests/mssql-collector.unit.test.cjs",
+    "test:dbpath": "node --test tests/dbpath.unit.test.cjs",
+    "test:store": "node --test tests/store-latest-metrics.unit.test.cjs",
+    "test:diagnostics": "node --test tests/db-diagnostics.unit.test.cjs",
+    "test:range": "node --test tests/range-metrics.unit.test.cjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",

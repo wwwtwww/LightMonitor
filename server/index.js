@@ -7,6 +7,7 @@ const store = require('./store')
 const MySQLConnector = require('./connectors/mysql')
 const OracleConnector = require('./connectors/oracle')
 const SQLServerConnector = require('./connectors/sqlserver')
+const { createPollOnce } = require('./poller')
 
 store.init()
 
@@ -83,9 +84,10 @@ async function handleApi(req, res, parsed) {
   }
   if (pathname === '/api/databases' && req.method === 'GET') {
     const dbs = store.listTargets()
+    const latestById = store.latestMetrics(dbs.map(d => d.id))
     const list = dbs.map(d => {
       const { password, ...pub } = d
-      return { ...pub, latest: store.latestMetric(d.id) }
+      return { ...pub, latest: latestById[d.id] || null }
     })
     return respondJson(res, 200, { data: list })
   }
@@ -166,11 +168,17 @@ async function handleApi(req, res, parsed) {
   if (pathname.endsWith('/metrics') && req.method === 'GET') {
     const id = pathname.split('/')[3]
     const now = Date.now()
+    const stepMs = Number(query.stepMs)
+    const maxPoints = Number(query.maxPoints)
+    const metricOptions = {
+      stepMs: Number.isFinite(stepMs) && stepMs > 0 ? Math.floor(stepMs) : undefined,
+      maxPoints: Number.isFinite(maxPoints) && maxPoints > 0 ? Math.floor(maxPoints) : undefined
+    }
     if (query.from !== undefined && query.to !== undefined) {
       const from = Number(query.from)
       const to = Number(query.to)
       if (!Number.isNaN(from) && !Number.isNaN(to) && to >= from) {
-        const arr = store.rangeMetrics(id, from, to)
+        const arr = store.rangeMetrics(id, from, to, metricOptions)
         return respondJson(res, 200, { data: arr })
       }
     }
@@ -179,7 +187,7 @@ async function handleApi(req, res, parsed) {
       if (m) {
         const hours = Math.max(1, Number(m[1]))
         const from = now - hours * 3600 * 1000
-        const arr = store.rangeMetrics(id, from, now)
+        const arr = store.rangeMetrics(id, from, now, metricOptions)
         return respondJson(res, 200, { data: arr })
       }
     }
@@ -188,11 +196,11 @@ async function handleApi(req, res, parsed) {
       if (!Number.isNaN(dt.getTime())) {
         const from = dt.getTime()
         const to = from + 3600 * 1000
-        const arr = store.rangeMetrics(id, from, to)
+        const arr = store.rangeMetrics(id, from, to, metricOptions)
         return respondJson(res, 200, { data: arr })
       }
     }
-    const arr = store.rangeMetrics(id, 0, now)
+    const arr = store.rangeMetrics(id, 0, now, metricOptions)
     return respondJson(res, 200, { data: arr })
   }
   if (pathname.endsWith('/mock') && req.method === 'POST') {
@@ -260,15 +268,24 @@ async function handleApi(req, res, parsed) {
     const r = await conn.topSlowQueries()
     return respondJson(res, 200, { data: r })
   }
+  if (pathname.endsWith('/mssql/blocking') && req.method === 'GET') {
+    const id = pathname.split('/')[3]
+    const cfg = store.getTarget(id)
+    if (!cfg || cfg.type.toLowerCase() !== 'mssql') return respondJson(res, 400, { error: 'mssql_only' })
+    const conn = connectorFor(cfg)
+    const r = await conn.getBlocking()
+    return respondJson(res, 200, { data: r })
+  }
   if (pathname === '/api/maintenance/stats' && req.method === 'GET') {
-    const s = store.getMaintenanceStats()
+    const includeCounts = String(query.includeCounts || '') === '1'
+    const s = store.getMaintenanceStats({ includeCounts })
     return respondJson(res, 200, {
       data: {
         db_size_mb: Number((s.dbSizeBytes / (1024 * 1024)).toFixed(2)),
         db_total_size_mb: Number((s.totalSizeBytes / (1024 * 1024)).toFixed(2)),
-        monitor_logs: s.metricsRows,
+        monitor_logs: s.metricsRows === null ? null : s.metricsRows,
         monitor_targets: s.targetsRows,
-        metrics_rows: s.metricsRows,
+        metrics_rows: s.metricsRows === null ? null : s.metricsRows,
         targets_rows: s.targetsRows
       }
     })
@@ -290,18 +307,55 @@ async function handleApi(req, res, parsed) {
   if (pathname === '/api/maintenance/cleanup' && req.method === 'POST') {
     const body = await parseBody(req)
     const days = Number(body.days)
-    const r = store.cleanupAndVacuum(Number.isFinite(days) && days > 0 ? Math.floor(days) : store.getMaintenanceConfig().retention_days)
+    const vacuum = body.vacuum === true
+    const batchSize = Number(body.batchSize)
+    const r = await store.cleanupOldMetrics({
+      days: Number.isFinite(days) && days > 0 ? Math.floor(days) : store.getMaintenanceConfig().retention_days,
+      vacuum,
+      walTruncate: true,
+      batchSize: Number.isFinite(batchSize) && batchSize > 0 ? Math.floor(batchSize) : undefined
+    })
     return respondJson(res, 200, {
       ok: true,
       data: {
         deleted_rows: r.deletedRows,
         keep_days: r.keepDays,
+        vacuum_ran: r.vacuumRan,
         db_size_mb_before: Number((r.before.dbSizeBytes / (1024 * 1024)).toFixed(2)),
         db_size_mb_after: Number((r.after.dbSizeBytes / (1024 * 1024)).toFixed(2)),
         db_total_size_mb_before: Number((r.before.totalSizeBytes / (1024 * 1024)).toFixed(2)),
         db_total_size_mb_after: Number((r.after.totalSizeBytes / (1024 * 1024)).toFixed(2))
       }
     })
+  }
+  if (pathname === '/api/diagnostics/db' && req.method === 'GET') {
+    const includeCounts = String(query.includeCounts || '') === '1'
+    const targetId = String(query.targetId || '').trim()
+    const now = Date.now()
+    const maxPoints = Number(query.maxPoints)
+    const stepMs = Number(query.stepMs)
+    let fromTs = NaN
+    let toTs = NaN
+    if (query.from !== undefined && query.to !== undefined) {
+      fromTs = Number(query.from)
+      toTs = Number(query.to)
+    } else if (query.range) {
+      const m = String(query.range).trim().match(/^(\d+)\s*h$/i)
+      if (m) {
+        const hours = Math.max(1, Number(m[1]))
+        fromTs = now - hours * 3600 * 1000
+        toTs = now
+      }
+    }
+    const diag = store.getDbDiagnostics({
+      includeCounts,
+      targetId,
+      fromTs,
+      toTs,
+      maxPoints: Number.isFinite(maxPoints) && maxPoints > 0 ? Math.floor(maxPoints) : undefined,
+      stepMs: Number.isFinite(stepMs) && stepMs > 0 ? Math.floor(stepMs) : undefined
+    })
+    return respondJson(res, 200, { data: diag })
   }
   return false
 }
@@ -366,36 +420,19 @@ const server = http.createServer(async (req, res) => {
   res.end()
 })
 
-function pollOnce() {
-  const cfg = store.getMaintenanceConfig()
-  const keepHours = Number(process.env.RETAIN_HOURS || cfg.retention_days * 24)
-  const now = Date.now()
-  const dbs = store.listTargets()
-  for (const cfg of dbs) {
-    const configuredRole = String(cfg.repl_role || '').toLowerCase()
-    const conn = connectorFor(cfg)
-    conn.collectMetrics().then(m => {
-      const resolvedRole = String((m && m.role) || configuredRole || '').toLowerCase() || 'unknown'
-      const point = { ts: now, online: true, ...m, role: resolvedRole }
-      if (point.role !== 'slave' && (point.slaveDelay === undefined || point.slaveDelay === null)) point.slaveDelay = -1
-      store.insertMetric(cfg.id, point, keepHours)
-    }).catch(err => {
-      logger.error(`Collect metrics failed for ${cfg.name}: ${err.message}`)
-      const point = { ts: now, online: false, sessions: 0, threadsRunning: 0, qps: 0, tps: 0, slowCount: 0, role: configuredRole || 'unknown', slaveDelay: -1 }
-      store.insertMetric(cfg.id, point, keepHours)
-    })
-  }
-  const cutoff = Date.now() - keepHours * 3600 * 1000
-  store.cleanupBefore(cutoff)
-}
+const pollOnce = createPollOnce({
+  store,
+  connectorFor,
+  logger,
+  resolveKeepHours: (maintenanceCfg) => Number(process.env.RETAIN_HOURS || maintenanceCfg.retention_days * 24)
+})
 
 const SAMPLE_MS = Number(process.env.SAMPLE_MS || 5000)
 pollOnce()
 setInterval(pollOnce, SAMPLE_MS)
 
 let maintenanceInFlight = false
-let lastMaintenanceRunDate = ''
-setInterval(() => {
+setInterval(async () => {
   if (maintenanceInFlight) return
   const cfg = store.getMaintenanceConfig()
   const time = String(cfg.cleanup_time || '03:00')
@@ -406,13 +443,18 @@ setInterval(() => {
   if (!Number.isFinite(hh) || !Number.isFinite(mm)) return
   const now = new Date()
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  if (today === lastMaintenanceRunDate) return
   if (now.getHours() !== hh || now.getMinutes() !== mm) return
+  const lastTs = Number(store.getConfig('last_cleanup_at') || 0)
+  if (Number.isFinite(lastTs) && lastTs > 0) {
+    const last = new Date(lastTs)
+    const lastDay = `${last.getFullYear()}-${String(last.getMonth() + 1).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`
+    if (lastDay === today) return
+  }
   maintenanceInFlight = true
   try {
-    store.cleanupAndVacuum(cfg.retention_days)
-    lastMaintenanceRunDate = today
-    logger.info(`Maintenance cleanup done: keep_days=${cfg.retention_days}`)
+    const r = await store.cleanupOldMetrics({ days: cfg.retention_days, vacuum: false, walTruncate: true })
+    store.setConfig('last_cleanup_at', String(Date.now()))
+    logger.info(`Maintenance cleanup done: keep_days=${r.keepDays} deleted_rows=${r.deletedRows}`)
   } catch (e) {
     logger.error(`Maintenance cleanup failed: ${e && (e.message || e)}`)
   } finally {

@@ -26,8 +26,12 @@
         <el-col :span="8">
           <div class="info-item">
             <div class="info-label">Metrics rows</div>
-            <div class="info-value lm-num">{{ formatNumber(stats.monitor_logs ?? stats.metrics_rows ?? 0) }}</div>
-            <div class="info-sub">From metrics table</div>
+            <div class="info-value lm-num">{{ metricsRows === null ? '—' : formatNumber(metricsRows) }}</div>
+            <div class="info-sub">
+              <span v-if="metricsRows === null">Estimated, load manually</span>
+              <span v-else>From metrics table</span>
+              <el-button v-if="metricsRows === null" link size="small" :loading="loadingCounts" @click="loadMetricsRows">Load</el-button>
+            </div>
           </div>
         </el-col>
         <el-col :span="8">
@@ -76,7 +80,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useApi } from '../composables/useApi'
 import { formatNumber } from '../utils/formatNumber'
@@ -91,10 +95,28 @@ const form = reactive({
 
 const saving = ref(false)
 const cleaning = ref(false)
+const loadingCounts = ref(false)
+
+const metricsRows = computed(() => {
+  const v = stats.monitor_logs ?? stats.metrics_rows
+  if (v === null || v === undefined) return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+})
 
 const refreshStats = async () => {
-  const s = await getMaintenanceStats()
+  const s = await getMaintenanceStats(false)
   Object.assign(stats, s || {})
+}
+
+const loadMetricsRows = async () => {
+  loadingCounts.value = true
+  try {
+    const s = await getMaintenanceStats(true)
+    Object.assign(stats, s || {})
+  } finally {
+    loadingCounts.value = false
+  }
 }
 
 const refreshConfig = async () => {
@@ -134,7 +156,7 @@ const runCleanup = async () => {
   cleaning.value = true
   ElMessage.warning('Running cleanup and vacuum...')
   try {
-    const r = await runMaintenanceCleanup(Number(form.retention_days) || 7)
+    const r = await runMaintenanceCleanup(Number(form.retention_days) || 7, { vacuum: true })
     const before = r?.db_total_size_mb_before ?? r?.db_size_mb_before
     const after = r?.db_total_size_mb_after ?? r?.db_size_mb_after
     ElMessage.success(`Done: deleted ${formatNumber(r?.deleted_rows ?? 0)} rows, size ${before}MB → ${after}MB`)

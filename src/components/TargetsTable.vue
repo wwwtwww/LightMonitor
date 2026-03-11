@@ -13,6 +13,12 @@
       default-expand-all
       :tree-props="{ children: 'children' }"
     >
+      <el-table-column prop="name" label="Database Alias" min-width="180" align="left" header-align="left" show-overflow-tooltip>
+        <template #default="scope">
+          <span class="db-name">{{ scope.row.name }}</span>
+        </template>
+      </el-table-column>
+
       <el-table-column label="Status" width="120" align="left" header-align="left" show-overflow-tooltip>
         <template #default="scope">
           <span class="status-cell">
@@ -22,20 +28,14 @@
         </template>
       </el-table-column>
 
-      <el-table-column prop="system_name" label="System Name" min-width="200" show-overflow-tooltip align="left" header-align="left" />
+      <el-table-column prop="system_name" label="System Name" min-width="180" show-overflow-tooltip align="left" header-align="left" />
 
-      <el-table-column prop="name" label="Database Alias" min-width="150" align="left" header-align="left" show-overflow-tooltip>
-        <template #default="scope">
-          <span class="cell-pad-left db-name" :class="{ 'db-name-slave': getRole(scope.row) === 'slave' }">{{ scope.row.name }}</span>
-        </template>
+      <el-table-column label="IP Address" min-width="180" align="left" header-align="left" show-overflow-tooltip>
+        <template #default="scope"><span>{{ scope.row.host }}:{{ scope.row.port }}</span></template>
       </el-table-column>
 
-      <el-table-column label="IP Address" min-width="200" align="left" header-align="left" show-overflow-tooltip>
-        <template #default="scope"><span class="cell-pad-left">{{ scope.row.host }}:{{ scope.row.port }}</span></template>
-      </el-table-column>
-
-      <el-table-column prop="remark" label="Notes" min-width="150" align="left" header-align="left" show-overflow-tooltip>
-        <template #default="scope"><span class="cell-pad-left">{{ scope.row.remark || '' }}</span></template>
+      <el-table-column prop="remark" label="Notes" min-width="140" align="left" header-align="left" show-overflow-tooltip>
+        <template #default="scope"><span>{{ scope.row.remark || '' }}</span></template>
       </el-table-column>
 
       <el-table-column prop="type" label="Type" width="120" align="center" header-align="center" show-overflow-tooltip>
@@ -145,10 +145,8 @@ const spanMethod = ({ rowIndex, column }) => {
 </script>
 
 <style scoped>
-.cell-pad-left { padding-left: 8px; }
 .db-name { display: inline-block; }
-.db-name-slave { padding-left: 15px; }
-.status-cell { display: inline-flex; align-items: center; gap: 8px; padding-left: 8px; }
+.status-cell { display: inline-flex; align-items: center; gap: 8px; }
 .dot { width: 8px; height: 8px; border-radius: 9999px; display: inline-block; }
 .dot-ok { background: #10b981; }
 .dot-bad { background: #ef4444; }
@@ -157,5 +155,12 @@ const spanMethod = ({ rowIndex, column }) => {
 .act { padding: 0; }
 .act-ico { width: 16px; height: 16px; }
 .lm-table-toolbar { padding: 12px 12px; border-bottom: 1px solid var(--lm-table-row-sep); background: #fff; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.lm-table-card :deep(.el-table__cell) { padding-top: 6px; padding-bottom: 6px; }
+.lm-table-card :deep(.el-table__header th.el-table__cell .cell),
+.lm-table-card :deep(.el-table__body td.el-table__cell .cell) { padding-left: 10px; padding-right: 10px; }
+.lm-table-card :deep(.el-table__header th.el-table__cell:first-child .cell),
+.lm-table-card :deep(.el-table__body td.el-table__cell:first-child .cell) { padding-left: 16px; }
+.lm-table-card :deep(.el-table__header th.el-table__cell:last-child .cell),
+.lm-table-card :deep(.el-table__body td.el-table__cell:last-child .cell) { padding-right: 16px; }
 </style>
 
