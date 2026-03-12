@@ -3,7 +3,7 @@
     <div class="ops-strip">
       <div class="ops-item" role="button" tabindex="0" @click="activeTab = 'locks'">
         <div class="ops-label">Lock waits</div>
-        <el-tag size="small" :type="lockCount ? 'danger' : 'info'" effect="plain">{{ lockCount }}</el-tag>
+        <el-tag size="small" :type="lockCountNum ? 'danger' : 'info'" effect="plain">{{ lockCountText }}</el-tag>
       </div>
       <div class="ops-item" role="button" tabindex="0" @click="activeTab = 'slow'">
         <div class="ops-label">Slow queries</div>
@@ -11,6 +11,64 @@
       </div>
       <div class="ops-hint">{{ rangeText }}</div>
     </div>
+
+    <el-card shadow="never" class="kpi-card-root">
+      <template #header>
+        <div class="panel-header">
+          <b>KPI (Latest Snapshot)</b>
+        </div>
+      </template>
+      <el-row :gutter="12">
+        <el-col :span="6">
+          <div class="info-item">
+            <div class="info-label">Response (ms) · Latest</div>
+            <div class="info-value lm-num">{{ respMsText }}</div>
+          </div>
+        </el-col>
+        <el-col :span="6">
+          <div class="info-item">
+            <div class="info-label">QPS · Latest</div>
+            <div class="info-value lm-num">{{ qpsText }}</div>
+          </div>
+        </el-col>
+        <el-col :span="6">
+          <div class="info-item">
+            <div class="info-label">TPS · Latest</div>
+            <div class="info-value lm-num">{{ tpsText }}</div>
+          </div>
+        </el-col>
+        <el-col :span="6">
+          <div class="info-item">
+            <div class="info-label">Connections · Latest</div>
+            <div class="info-value lm-num">{{ sessionsText }}</div>
+          </div>
+        </el-col>
+        <el-col :span="6">
+          <div class="info-item">
+            <div class="info-label">Threads Running · Latest</div>
+            <div class="info-value lm-num">{{ threadsText }}</div>
+          </div>
+        </el-col>
+        <el-col :span="6">
+          <div class="info-item">
+            <div class="info-label">Slow Count · Latest</div>
+            <div class="info-value lm-num">{{ slowCount }}</div>
+          </div>
+        </el-col>
+        <el-col :span="6">
+          <div class="info-item">
+            <div class="info-label">Replication Lag · Latest</div>
+            <div class="info-value lm-num">{{ lagText }}</div>
+          </div>
+        </el-col>
+        <el-col :span="6">
+          <div class="info-item">
+            <div class="info-label">Role · Latest</div>
+            <div class="info-value lm-num">{{ roleLabel }}</div>
+          </div>
+        </el-col>
+      </el-row>
+    </el-card>
 
     <el-tabs v-model="activeTab" class="mysql-tabs">
       <el-tab-pane label="Metrics" name="metrics">
@@ -92,7 +150,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import { useApi } from '../composables/useApi'
 import SlowQueryModal from '../components/SlowQueryModal.vue'
@@ -111,6 +169,11 @@ const lockData = ref([])
 const slowData = ref([])
 const slowDialogVisible = ref(false)
 const activeTab = ref('metrics')
+
+const locksLoaded = ref(false)
+const locksLoading = ref(false)
+const slowLoaded = ref(false)
+const slowLoading = ref(false)
 
 const chartAggs = reactive({})
 let chartTimer = null
@@ -131,14 +194,48 @@ const roleValue = computed(() => {
   if (lr && lr !== 'unknown') return lr
   return String(props.target?.repl_role || '').toLowerCase()
 })
-const lockCount = computed(() => (lockData.value || []).length)
+const lockCountNum = computed(() => (lockData.value || []).length)
+const lockCountText = computed(() => (locksLoaded.value ? String(lockCountNum.value) : '—'))
+const roleLabel = computed(() => (roleValue.value === 'slave' ? 'Slave' : roleValue.value === 'master' ? 'Master' : roleValue.value === 'standalone' ? 'Standalone' : 'Unknown'))
 const slowCount = computed(() => {
   const n = Number(latest.value.slowCount)
   if (!Number.isFinite(n) || n < 0) return 0
   return n
 })
-const locksTabLabel = computed(() => `Locks (${lockCount.value})`)
+const locksTabLabel = computed(() => `Locks (${locksLoaded.value ? lockCountNum.value : '—'})`)
 const slowTabLabel = computed(() => `Slow Queries (${slowCount.value})`)
+
+const respMsText = computed(() => {
+  const n = Number(latest.value.resp_time)
+  if (!Number.isFinite(n) || n < 0) return '—'
+  return String(Math.round(n))
+})
+const qpsText = computed(() => {
+  const n = Number(latest.value.qps)
+  if (!Number.isFinite(n)) return '—'
+  return n.toFixed(2)
+})
+const tpsText = computed(() => {
+  const n = Number(latest.value.tps)
+  if (!Number.isFinite(n)) return '—'
+  return n.toFixed(2)
+})
+const sessionsText = computed(() => {
+  const n = Number(latest.value.sessions)
+  if (!Number.isFinite(n)) return '—'
+  return String(Math.max(0, Math.floor(n)))
+})
+const threadsText = computed(() => {
+  const n = Number(latest.value.threadsRunning)
+  if (!Number.isFinite(n)) return '—'
+  return String(Math.max(0, Math.floor(n)))
+})
+const lagText = computed(() => {
+  if (roleValue.value !== 'slave') return '—'
+  const n = Number(latest.value.slaveDelay)
+  if (!Number.isFinite(n) || n < 0) return '—'
+  return `${Math.round(n)}s`
+})
 
 const drawSingleChart = async (conf, rawData) => {
   const dom = document.getElementById(conf.id)
@@ -211,7 +308,14 @@ const initAllCharts = () => {
 }
 
 const fetchLocksData = async () => {
-  lockData.value = await getLocks(props.target.id)
+  if (locksLoading.value) return
+  locksLoading.value = true
+  try {
+    lockData.value = await getLocks(props.target.id)
+    locksLoaded.value = true
+  } finally {
+    locksLoading.value = false
+  }
 }
 
 const handleKill = async (threadId) => {
@@ -220,12 +324,26 @@ const handleKill = async (threadId) => {
 }
 
 const showSlowDetails = async () => {
-  slowData.value = await getTopSlow(props.target.id)
-  slowDialogVisible.value = true
+  if (slowLoading.value) return
+  slowLoading.value = true
+  try {
+    slowData.value = await getTopSlow(props.target.id)
+    slowLoaded.value = true
+    slowDialogVisible.value = true
+  } finally {
+    slowLoading.value = false
+  }
 }
 
 const refreshSlow = async () => {
-  slowData.value = await getTopSlow(props.target.id)
+  if (slowLoading.value) return
+  slowLoading.value = true
+  try {
+    slowData.value = await getTopSlow(props.target.id)
+    slowLoaded.value = true
+  } finally {
+    slowLoading.value = false
+  }
 }
 
 watch(
@@ -239,10 +357,14 @@ watch(
   { immediate: true }
 )
 
-onMounted(() => {
-  fetchLocksData()
-  refreshSlow()
-})
+watch(
+  () => activeTab.value,
+  async (tab) => {
+    if (tab === 'locks' && !locksLoaded.value) await fetchLocksData()
+    if (tab === 'slow' && !slowLoaded.value) await refreshSlow()
+  },
+  { immediate: true }
+)
 
 onBeforeUnmount(() => {
   clearInterval(chartTimer)
@@ -260,6 +382,11 @@ onBeforeUnmount(() => {
 .ops-item:hover { border-color: #cbd5e1; }
 .ops-label { font-size: 12px; color: var(--lm-muted); }
 .ops-hint { margin-left: auto; font-size: 12px; color: var(--lm-muted); }
+.kpi-card-root :deep(.el-card__body) { padding: 16px 16px; }
+.panel-header { display: flex; align-items: center; justify-content: space-between; }
+.info-item { background: #fff; border-radius: 12px; padding: 12px 14px; box-shadow: var(--lm-shadow-sm); border: var(--lm-border); }
+.info-label { font-size: 11px; color: var(--lm-muted); letter-spacing: 0.02em; }
+.info-value { margin-top: 6px; font-size: 16px; font-weight: 700; color: var(--lm-text); text-align: right; }
 .mysql-tabs :deep(.el-tabs__header) { margin: 0; }
 .mysql-tabs :deep(.el-tabs__nav-wrap::after) { display: none; }
 .mysql-tabs :deep(.el-tabs__item) { height: 34px; line-height: 34px; font-size: 13px; }

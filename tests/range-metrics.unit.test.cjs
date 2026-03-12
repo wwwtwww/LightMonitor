@@ -22,7 +22,7 @@ test('rangeMetrics should downsample to maxPoints', async () => {
 
   const start = 1_000_000
   for (let i = 0; i < 100; i++) {
-    store.insertMetric('t1', { ts: start + i * 1000, online: true, sessions: i, qps: i, tps: i, threadsRunning: i, role: 'master', extra_data: '{}' })
+    store.insertMetric('t1', { ts: start + i * 1000, online: true, sessions: i, qps: i, tps: i, threadsRunning: i, role: 'master', lockWaitSessions: i % 3, tablespaceMaxUsed: 80 + (i % 5), fraUsed: 70 + (i % 7), extra_data: '{}' })
   }
 
   const from = start
@@ -31,6 +31,9 @@ test('rangeMetrics should downsample to maxPoints', async () => {
   assert.ok(rows.length > 0)
   assert.ok(rows.length <= 12)
   for (const r of rows) assert.ok(r && typeof r.ts === 'number')
+  for (const r of rows) assert.ok(typeof r.lockWaitSessions === 'number')
+  for (const r of rows) assert.ok(typeof r.tablespaceMaxUsed === 'number')
+  for (const r of rows) assert.ok(typeof r.fraUsed === 'number')
 
   if (prevDbPath === undefined) delete process.env.DB_PATH
   else process.env.DB_PATH = prevDbPath

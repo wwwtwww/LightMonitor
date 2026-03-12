@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LightMonitor - Oracle Detail Preview v2</title>
+    <style>
+      :root {
+        --bg: #f5f6fa;
+        --surface: #ffffff;
+        --radius: 14px;
+        --border: 1px solid #e2e8f0;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        --text: #111827;
+        --muted: #6b7280;
+        --muted2: #94a3b8;
+        --blue: #2563eb;
+        --green: #16a34a;
+        --amber: #d97706;
+        --red: #dc2626;
+        --purple: #7c3aed;
+        --mono: Consolas, Monaco, monospace;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+      }
+      .page { max-width: 1280px; margin: 0 auto; padding: 24px; }
+      .topbar {
+        position: sticky;
+        top: 16px;
+        z-index: 10;
+        background: rgba(255, 255, 255, 0.86);
+        backdrop-filter: blur(10px);
+        border: var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .crumbs { font-size: 12px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+      .crumbs .sep { color: #cbd5e1; }
+      .crumbs .strong { color: var(--text); font-weight: 800; }
+      .controls { display: inline-flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-left: auto; }
+      .seg {
+        display: inline-flex;
+        border: var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+        background: #fff;
+      }
+      .seg button {
+        border: 0;
+        background: transparent;
+        padding: 7px 10px;
+        font-size: 12px;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .seg button.active { background: #eff6ff; color: #1d4ed8; font-weight: 800; }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 10px;
+        border-radius: 10px;
+        border: var(--border);
+        background: #fff;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .switch {
+        width: 34px;
+        height: 18px;
+        border-radius: 999px;
+        border: var(--border);
+        background: #e2e8f0;
+        position: relative;
+        flex: 0 0 auto;
+      }
+      .switch::after {
+        content: "";
+        width: 14px;
+        height: 14px;
+        border-radius: 999px;
+        background: #fff;
+        position: absolute;
+        top: 1px;
+        left: 1px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+      }
+      .switch.on { background: #bfdbfe; border-color: #93c5fd; }
+      .switch.on::after { left: 18px; }
+      .content { margin-top: 16px; display: grid; gap: 16px; }
+      .summary {
+        display: grid;
+        grid-template-columns: 380px 1fr;
+        gap: 16px;
+      }
+      .card {
+        background: var(--surface);
+        border: var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+      }
+      .card-pad { padding: 14px 14px; }
+      .inst-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+      .inst-name { font-size: 16px; font-weight: 900; line-height: 1.2; }
+      .inst-sub { margin-top: 4px; font-size: 12px; color: var(--muted); }
+      .status-cell { display: inline-flex; align-items: center; gap: 8px; }
+      .dot { width: 8px; height: 8px; border-radius: 9999px; display: inline-block; }
+      .dot-ok { background: #10b981; }
+      .dot-bad { background: #ef4444; }
+      .status-text { color: #374151; font-weight: 700; font-size: 13px; }
+      .lm-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2px 8px;
+        height: 20px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        border: 1px solid transparent;
+        background: #e5e7eb;
+        color: #374151;
+        white-space: nowrap;
+      }
+      .lm-badge-oracle { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+      .lm-badge-primary { background: #ede9fe; color: #5b21b6; border-color: #ddd6fe; }
+      .meta { margin-top: 12px; display: grid; gap: 10px; }
+      .meta-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+      .meta-label { font-size: 11px; color: var(--muted); }
+      .meta-value { font-size: 13px; font-weight: 800; color: var(--text); text-align: right; }
+      .meta-badges { display: inline-flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .kpi {
+        padding: 12px 14px;
+        border-radius: var(--radius);
+        border: var(--border);
+        background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+        box-shadow: var(--shadow);
+      }
+      .kpi-warn { border-color: #fed7aa; }
+      .kpi-danger { border-color: #fecaca; }
+      .kpi-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+      .kpi-label { font-size: 11px; color: var(--muted); letter-spacing: 0.02em; }
+      .kpi-badge { font-size: 11px; color: var(--muted2); }
+      .kpi-value { margin-top: 6px; font-size: 18px; font-weight: 950; line-height: 1.1; text-align: right; }
+      .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+      .tabs {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        padding: 12px 14px;
+        border-bottom: var(--border);
+      }
+      .tab {
+        border: 0;
+        background: transparent;
+        font-size: 13px;
+        color: var(--muted);
+        padding: 7px 10px;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+      .tab.active { background: #eff6ff; color: #1d4ed8; font-weight: 900; }
+      .tab .count { margin-left: 6px; font-family: var(--mono); color: var(--muted2); }
+      .section { padding: 14px 14px; }
+      .section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+      .section-title { font-size: 14px; font-weight: 900; }
+      .section-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .btn {
+        border: var(--border);
+        background: #fff;
+        border-radius: 10px;
+        padding: 7px 10px;
+        font-size: 12px;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .btn.primary { background: #2563eb; border-color: #1d4ed8; color: #fff; font-weight: 800; }
+      .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      .chart {
+        border: var(--border);
+        border-radius: var(--radius);
+        padding: 12px 12px;
+        background: #fff;
+      }
+      .chart-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
+      .chart-title { font-size: 13px; font-weight: 900; }
+      .chart-agg { display: inline-flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); justify-content: flex-end; text-align: right; }
+      .chart-agg b { color: var(--text); font-weight: 900; font-family: var(--mono); }
+      .chart-box {
+        height: 250px;
+        border-radius: 12px;
+        background:
+          linear-gradient(#f8fafc, #f8fafc) padding-box,
+          repeating-linear-gradient(90deg, rgba(148,163,184,0.18) 0, rgba(148,163,184,0.18) 1px, transparent 1px, transparent 52px),
+          repeating-linear-gradient(0deg, rgba(148,163,184,0.18) 0, rgba(148,163,184,0.18) 1px, transparent 1px, transparent 44px);
+        border: 1px dashed #cbd5e1;
+        position: relative;
+        overflow: hidden;
+      }
+      .chart-line {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 40px;
+        height: 2px;
+        background: linear-gradient(90deg, transparent 0%, rgba(37,99,235,0.65) 15%, rgba(37,99,235,0.9) 55%, rgba(37,99,235,0.55) 85%, transparent 100%);
+        transform: rotate(-2deg);
+        transform-origin: center;
+      }
+      .chart-note { margin-top: 10px; font-size: 12px; color: var(--muted); }
+      .table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .table th, .table td { padding: 10px 10px; border-bottom: 1px solid #e2e8f0; text-align: left; vertical-align: top; }
+      .table th { background: #f8fafc; color: #64748b; font-weight: 900; }
+      .right { text-align: right; }
+      .danger { border-color: #fecaca; }
+      .warn { border-color: #fed7aa; }
+      .hint { color: var(--muted); font-size: 12px; }
+      .pill2 {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        border: var(--border);
+        background: #fff;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .pill2 b { color: var(--text); font-family: var(--mono); }
+      .na-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .na-item {
+        border: var(--border);
+        border-radius: 10px;
+        padding: 10px;
+        background: #f8fafc;
+      }
+      .na-label { font-size: 12px; color: #475569; font-weight: 700; }
+      .na-value { margin-top: 4px; font-size: 12px; color: #64748b; }
+      @media (max-width: 1100px) {
+        .summary { grid-template-columns: 1fr; }
+        .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .grid2 { grid-template-columns: 1fr; }
+        .na-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+      @media (max-width: 720px) {
+        .page { padding: 16px; }
+        .kpis { grid-template-columns: 1fr; }
+        .na-grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="topbar">
+        <div class="crumbs">
+          <span>Monitoring</span><span class="sep">/</span>
+          <span class="strong">ORACLE</span><span class="sep">/</span>
+          <span class="strong" id="crumbSystem">LTS</span>
+        </div>
+        <div class="controls">
+          <div class="seg" aria-label="time range">
+            <button class="active">Last 1h</button>
+            <button>Last 6h</button>
+            <button>Last 24h</button>
+            <button>Custom</button>
+          </div>
+          <div class="pill">
+            <span>Auto Refresh</span>
+            <span class="switch on" aria-hidden="true"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="summary">
+          <div class="card card-pad">
+            <div class="inst-head">
+              <div>
+                <div class="inst-name" id="instName">oracle1</div>
+                <div class="inst-sub" id="instAddr">10.2.2.136:1521/ORCL</div>
+              </div>
+              <div class="status-cell">
+                <span class="dot dot-ok" aria-hidden="true"></span>
+                <span class="status-text">Online</span>
+              </div>
+            </div>
+            <div class="meta">
+              <div class="meta-row">
+                <div class="meta-label">Badges</div>
+                <div class="meta-value">
+                  <div class="meta-badges">
+                    <span class="lm-badge lm-badge-oracle">Oracle</span>
+                    <span class="lm-badge lm-badge-primary">Primary</span>
+                  </div>
+                </div>
+              </div>
+              <div class="meta-row">
+                <div class="meta-label">System Name</div>
+                <div class="meta-value" id="systemName">LTS</div>
+              </div>
+              <div class="meta-row">
+                <div class="meta-label">Oracle Version</div>
+                <div class="meta-value mono" id="verText">19c</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="kpis">
+            <div class="kpi">
+              <div class="kpi-top">
+                <div class="kpi-label">Response</div>
+                <div class="kpi-badge">ms</div>
+              </div>
+              <div class="kpi-value mono">42</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi-top">
+                <div class="kpi-label">QPS</div>
+                <div class="kpi-badge">execute/s</div>
+              </div>
+              <div class="kpi-value mono">1298.64</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi-top">
+                <div class="kpi-label">Active Sessions</div>
+                <div class="kpi-badge">latest</div>
+              </div>
+              <div class="kpi-value mono">16</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi-top">
+                <div class="kpi-label">Total Sessions</div>
+                <div class="kpi-badge">latest</div>
+              </div>
+              <div class="kpi-value mono">84</div>
+            </div>
+            <div class="kpi kpi-warn">
+              <div class="kpi-top">
+                <div class="kpi-label">Lock Wait Sessions</div>
+                <div class="kpi-badge">latest</div>
+              </div>
+              <div class="kpi-value mono" id="kpiLockWait">2</div>
+            </div>
+            <div class="kpi kpi-warn">
+              <div class="kpi-top">
+                <div class="kpi-label">Blocking Sessions</div>
+                <div class="kpi-badge">latest</div>
+              </div>
+              <div class="kpi-value mono" id="kpiBlocking">1</div>
+            </div>
+            <div class="kpi kpi-warn">
+              <div class="kpi-top">
+                <div class="kpi-label">Tablespace Max Used</div>
+                <div class="kpi-badge">%</div>
+              </div>
+              <div class="kpi-value mono" id="kpiTsUsed">86.4</div>
+            </div>
+            <div class="kpi kpi-danger">
+              <div class="kpi-top">
+                <div class="kpi-label">FRA Used</div>
+                <div class="kpi-badge">%</div>
+              </div>
+              <div class="kpi-value mono" id="kpiFraUsed">91.2</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="tabs">
+            <button class="tab active" data-tab="metrics">Metrics</button>
+            <button class="tab" data-tab="locks">Locks<span class="count mono" id="locksCount">(2)</span></button>
+            <button class="tab" data-tab="capacity">Capacity</button>
+          </div>
+
+          <div class="section" id="tab-metrics">
+            <div class="section-head">
+              <div class="section-title">Metrics Trend</div>
+              <div class="section-actions">
+                <span class="pill2">AAS <b>3.8</b></span>
+                <span class="pill2">Active Ratio <b>19.0%</b></span>
+              </div>
+            </div>
+            <div class="grid2">
+              <div class="chart">
+                <div class="chart-head">
+                  <div class="chart-title">QPS (Execute/s)</div>
+                  <div class="chart-agg">
+                    <span>Max <b>3668.84</b></span>
+                    <span>Min <b>0.00</b></span>
+                    <span>Avg <b>1298.64</b></span>
+                  </div>
+                </div>
+                <div class="chart-box">
+                  <div class="chart-line"></div>
+                </div>
+                <div class="chart-note">来自数据库可采集口径，不依赖主机代理。</div>
+              </div>
+              <div class="chart">
+                <div class="chart-head">
+                  <div class="chart-title">Sessions (Active / Total)</div>
+                  <div class="chart-agg">
+                    <span>Active <b>16</b></span>
+                    <span>Total <b>84</b></span>
+                  </div>
+                </div>
+                <div class="chart-box">
+                  <div class="chart-line" style="bottom: 108px; transform: rotate(-1deg); background: linear-gradient(90deg, transparent 0%, rgba(37,99,235,0.60) 15%, rgba(37,99,235,0.85) 55%, rgba(37,99,235,0.50) 85%, transparent 100%);"></div>
+                  <div class="chart-line" style="bottom: 52px; transform: rotate(1deg); background: linear-gradient(90deg, transparent 0%, rgba(124,58,237,0.45) 15%, rgba(124,58,237,0.75) 55%, rgba(124,58,237,0.45) 85%, transparent 100%);"></div>
+                </div>
+                <div class="chart-note">用于判断并发压力和会话逼近上限风险。</div>
+              </div>
+              <div class="chart">
+                <div class="chart-head">
+                  <div class="chart-title">Lock Wait Sessions</div>
+                  <div class="chart-agg">
+                    <span>Max <b>7</b></span>
+                    <span>Min <b>0</b></span>
+                    <span>Avg <b>1.3</b></span>
+                  </div>
+                </div>
+                <div class="chart-box">
+                  <div class="chart-line" style="background: linear-gradient(90deg, transparent 0%, rgba(217,119,6,0.55) 15%, rgba(217,119,6,0.90) 55%, rgba(217,119,6,0.55) 85%, transparent 100%);"></div>
+                </div>
+                <div class="chart-note">锁等待出现时与阻塞链联动分析。</div>
+              </div>
+              <div class="chart">
+                <div class="chart-head">
+                  <div class="chart-title">Tablespace / FRA Used %</div>
+                  <div class="chart-agg">
+                    <span>TS Max <b>86.4%</b></span>
+                    <span>FRA <b>91.2%</b></span>
+                  </div>
+                </div>
+                <div class="chart-box">
+                  <div class="chart-line" style="bottom: 78px; transform: rotate(-2deg); background: linear-gradient(90deg, transparent 0%, rgba(217,119,6,0.50) 15%, rgba(217,119,6,0.80) 55%, rgba(217,119,6,0.50) 85%, transparent 100%);"></div>
+                  <div class="chart-line" style="bottom: 118px; transform: rotate(1deg); background: linear-gradient(90deg, transparent 0%, rgba(220,38,38,0.45) 15%, rgba(220,38,38,0.78) 55%, rgba(220,38,38,0.45) 85%, transparent 100%);"></div>
+                </div>
+                <div class="chart-note">容量趋势是 Oracle 故障前置预警关键指标。</div>
+              </div>
+            </div>
+            <div class="hint" style="margin-top: 10px;">
+              无代理模式：仅采集 Oracle 内部视图指标（不采集主机 CPU/内存/磁盘/网络）。
+            </div>
+          </div>
+
+          <div class="section" id="tab-locks" style="display:none;">
+            <div class="section-head">
+              <div class="section-title">Lock Wait Monitor</div>
+              <div class="section-actions">
+                <button class="btn">Refresh</button>
+                <button class="btn primary">Open Detail</button>
+              </div>
+            </div>
+            <div class="card warn" style="box-shadow:none;">
+              <div class="card-pad" style="display:flex; gap:10px; justify-content:space-between; flex-wrap:wrap;">
+                <div class="pill2">Blocking Sessions <b>1</b></div>
+                <div class="pill2">Lock Wait Sessions <b>2</b></div>
+                <div class="pill2">Longest Wait <b>68s</b></div>
+                <div class="pill2">Top Event <b>enq: TX - row lock contention</b></div>
+              </div>
+            </div>
+            <div style="height: 12px;"></div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th class="right">SID</th>
+                  <th class="right">Blocking SID</th>
+                  <th class="right">Wait (s)</th>
+                  <th>Lock Type</th>
+                  <th>Object</th>
+                  <th>SQL ID</th>
+                  <th>Event</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="right mono">243</td>
+                  <td class="right mono">177</td>
+                  <td class="right mono">68</td>
+                  <td class="mono">TX</td>
+                  <td>APP.ORDERS</td>
+                  <td class="mono">6x7m0v6d2r3f1</td>
+                  <td>enq: TX - row lock contention</td>
+                </tr>
+                <tr>
+                  <td class="right mono">245</td>
+                  <td class="right mono">177</td>
+                  <td class="right mono">23</td>
+                  <td class="mono">TM</td>
+                  <td>APP.ORDERS</td>
+                  <td class="mono">5d2c6jq5kq7r9</td>
+                  <td>enq: TM - contention</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="section" id="tab-capacity" style="display:none;">
+            <div class="section-head">
+              <div class="section-title">Tablespace Monitor</div>
+              <div class="section-actions">
+                <button class="btn">Refresh</button>
+              </div>
+            </div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Tablespace</th>
+                  <th class="right">Used %</th>
+                  <th class="right">Used GB</th>
+                  <th class="right">Free GB</th>
+                  <th>Autoextend</th>
+                  <th class="right">Growth (GB/h)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>USERS</td>
+                  <td class="right mono">86.4</td>
+                  <td class="right mono">108.2</td>
+                  <td class="right mono">17.0</td>
+                  <td>ON</td>
+                  <td class="right mono">1.42</td>
+                </tr>
+                <tr>
+                  <td>APP_DATA</td>
+                  <td class="right mono">72.8</td>
+                  <td class="right mono">356.7</td>
+                  <td class="right mono">133.4</td>
+                  <td>ON</td>
+                  <td class="right mono">2.11</td>
+                </tr>
+                <tr>
+                  <td>UNDO</td>
+                  <td class="right mono">64.2</td>
+                  <td class="right mono">61.9</td>
+                  <td class="right mono">34.5</td>
+                  <td>ON</td>
+                  <td class="right mono">0.18</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="section-head" style="margin-top: 14px;">
+              <div class="section-title">Fast Recovery Area (FRA)</div>
+              <div class="section-actions">
+                <span class="pill2">Used <b>91.2%</b></span>
+                <span class="pill2">Reclaimable <b>13.4%</b></span>
+                <span class="pill2">Archive Rate <b>4.8 GB/h</b></span>
+              </div>
+            </div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th class="right">Value</th>
+                  <th>Status</th>
+                  <th>Advice</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>FRA Used %</td>
+                  <td class="right mono">91.2</td>
+                  <td>Warning</td>
+                  <td>检查归档清理策略，避免接近满容量。</td>
+                </tr>
+                <tr>
+                  <td>Reclaimable %</td>
+                  <td class="right mono">13.4</td>
+                  <td>Normal</td>
+                  <td>可回收空间偏低时需评估备份保留策略。</td>
+                </tr>
+                <tr>
+                  <td>Remaining GB</td>
+                  <td class="right mono">42.7</td>
+                  <td>Warning</td>
+                  <td>按当前增长速率约 8.9h 后触顶。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const tabs = Array.from(document.querySelectorAll(".tab"));
+      const panels = {
+        metrics: document.getElementById("tab-metrics"),
+        locks: document.getElementById("tab-locks"),
+        capacity: document.getElementById("tab-capacity"),
+      };
+      tabs.forEach((t) => {
+        t.addEventListener("click", () => {
+          tabs.forEach((x) => x.classList.remove("active"));
+          t.classList.add("active");
+          const key = t.getAttribute("data-tab");
+          Object.keys(panels).forEach((k) => (panels[k].style.display = k === key ? "" : "none"));
+        });
+      });
+
+      const params = new URLSearchParams(location.search);
+      const sys = params.get("system") || "LTS";
+      const name = params.get("name") || "oracle1";
+      const host = params.get("host") || "10.2.2.136";
+      const port = params.get("port") || "1521";
+      const service = params.get("service") || "ORCL";
+      const ver = params.get("ver") || "19c";
+      const lockWait = Number(params.get("lockWait") || "2");
+      const blocking = Number(params.get("blocking") || "1");
+      const tsUsed = params.get("tsUsed") || "86.4";
+      const fraUsed = params.get("fraUsed") || "91.2";
+
+      document.getElementById("crumbSystem").textContent = sys;
+      document.getElementById("systemName").textContent = sys;
+      document.getElementById("instName").textContent = name;
+      document.getElementById("instAddr").textContent = `${host}:${port}/${service}`;
+      document.getElementById("verText").textContent = ver;
+      document.getElementById("kpiLockWait").textContent = String(lockWait);
+      document.getElementById("kpiBlocking").textContent = String(blocking);
+      document.getElementById("kpiTsUsed").textContent = tsUsed;
+      document.getElementById("kpiFraUsed").textContent = fraUsed;
+      document.getElementById("locksCount").textContent = `(${lockWait})`;
+    </script>
+  </body>
+</html>

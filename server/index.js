@@ -276,6 +276,22 @@ async function handleApi(req, res, parsed) {
     const r = await conn.getBlocking()
     return respondJson(res, 200, { data: r })
   }
+  if (pathname.endsWith('/oracle/locks') && req.method === 'GET') {
+    const id = pathname.split('/')[3]
+    const cfg = store.getTarget(id)
+    if (!cfg || cfg.type.toLowerCase() !== 'oracle') return respondJson(res, 400, { error: 'oracle_only' })
+    const conn = connectorFor(cfg)
+    const r = await conn.getLocks()
+    return respondJson(res, 200, r)
+  }
+  if (pathname.endsWith('/oracle/capacity') && req.method === 'GET') {
+    const id = pathname.split('/')[3]
+    const cfg = store.getTarget(id)
+    if (!cfg || cfg.type.toLowerCase() !== 'oracle') return respondJson(res, 400, { error: 'oracle_only' })
+    const conn = connectorFor(cfg)
+    const r = await conn.getCapacity()
+    return respondJson(res, 200, { data: r })
+  }
   if (pathname === '/api/maintenance/stats' && req.method === 'GET') {
     const includeCounts = String(query.includeCounts || '') === '1'
     const s = store.getMaintenanceStats({ includeCounts })

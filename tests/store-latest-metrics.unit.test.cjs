@@ -22,12 +22,16 @@ test('latestMetrics should return latest metric per target', async () => {
   store.insertTarget({ id: 't2', name: 't2', business_system: '', repl_role: '', remark: '', type: 'mysql', host: 'h', port: 1, user: 'u', password: 'p', options: {} })
 
   store.insertMetric('t1', { ts: 1000, online: true, sessions: 1, threadsRunning: 1, qps: 1, tps: 1, role: 'master' })
-  store.insertMetric('t1', { ts: 2000, online: true, sessions: 2, threadsRunning: 2, qps: 2, tps: 2, role: 'master' })
+  store.insertMetric('t1', { ts: 2000, online: true, sessions: 2, threadsRunning: 2, qps: 2, tps: 2, role: 'master', lockWaitSessions: 3, blockingSessions: 2, tablespaceMaxUsed: 88.6, fraUsed: 93.1 })
   store.insertMetric('t2', { ts: 1500, online: true, sessions: 3, threadsRunning: 3, qps: 3, tps: 3, role: 'master' })
 
   const m = store.latestMetrics(['t1', 't2', 'missing'])
   assert.equal(m.t1.ts, 2000)
   assert.equal(m.t2.ts, 1500)
+  assert.equal(m.t1.lockWaitSessions, 3)
+  assert.equal(m.t1.blockingSessions, 2)
+  assert.equal(m.t1.tablespaceMaxUsed, 88.6)
+  assert.equal(m.t1.fraUsed, 93.1)
 
   if (prevDbPath === undefined) delete process.env.DB_PATH
   else process.env.DB_PATH = prevDbPath

@@ -110,6 +110,24 @@ export function useApi() {
     }
   }
 
+  const getOracleLocks = async (id) => {
+    try {
+      const res = await axios.get(`${API_URL}/databases/${id}/oracle/locks`)
+      return res.data.waits || []
+    } catch {
+      return []
+    }
+  }
+
+  const getOracleCapacity = async (id) => {
+    try {
+      const res = await axios.get(`${API_URL}/databases/${id}/oracle/capacity`)
+      return res.data.data || { tablespaces: [], fra: null }
+    } catch {
+      return { tablespaces: [], fra: null }
+    }
+  }
+
   const getMetrics = async (id, params = {}) => {
     try {
         const query = new URLSearchParams()
@@ -178,6 +196,8 @@ export function useApi() {
     killSession,
     getTopSlow,
     getMssqlBlocking,
+    getOracleLocks,
+    getOracleCapacity,
     getMetrics,
     getMaintenanceStats,
     getMaintenanceConfig,

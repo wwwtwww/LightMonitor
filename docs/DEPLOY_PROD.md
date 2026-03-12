@@ -125,6 +125,7 @@ node server/index.js
 - `RETAIN_HOURS`：指标保留小时数，默认 `168`（7天）
 - `LIGHTMONITOR_DATA_DIR` / `DATA_DIR`：数据目录（用于保存既有监控目标与历史数据），默认使用程序目录下的 `data/`
 - `LIGHTMONITOR_DB_PATH` / `DB_PATH`：直接指定 SQLite 数据库文件路径（优先级高于 DATA_DIR）
+- `DB_MMAP_MB`：SQLite `mmap_size`（MB），默认 `512`
 
 示例（Linux）：
 
@@ -217,6 +218,10 @@ Environment=RETAIN_HOURS=168
 [Install]
 WantedBy=multi-user.target
 ```
+
+## 9. 性能问题记录
+
+- 2026-03 全站卡顿根因与修复：[PERF_RCA_2026-03.md](file:///e:/LightMonitor-1/docs/PERF_RCA_2026-03.md)
 
 启用与启动：
 

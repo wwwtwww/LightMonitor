@@ -82,6 +82,10 @@ function openDb() {
       slave_delay INTEGER,
       slow_queries INTEGER,
       threads_running INTEGER,
+      lock_wait_sessions INTEGER,
+      blocking_sessions INTEGER,
+      tablespace_max_used REAL,
+      fra_used REAL,
       extra_data TEXT,
       created_at INTEGER,
       FOREIGN KEY(target_id) REFERENCES targets(id) ON DELETE CASCADE
@@ -102,6 +106,10 @@ function openDb() {
   try { db.exec(`ALTER TABLE metrics ADD COLUMN slave_delay INTEGER`) } catch (_) {}
   try { db.exec(`ALTER TABLE metrics ADD COLUMN role TEXT`) } catch (_) {}
   try { db.exec(`ALTER TABLE metrics ADD COLUMN extra_data TEXT`) } catch (_) {}
+  try { db.exec(`ALTER TABLE metrics ADD COLUMN lock_wait_sessions INTEGER`) } catch (_) {}
+  try { db.exec(`ALTER TABLE metrics ADD COLUMN blocking_sessions INTEGER`) } catch (_) {}
+  try { db.exec(`ALTER TABLE metrics ADD COLUMN tablespace_max_used REAL`) } catch (_) {}
+  try { db.exec(`ALTER TABLE metrics ADD COLUMN fra_used REAL`) } catch (_) {}
   try { db.exec(`UPDATE targets SET db_type = 'mssql' WHERE db_type = 'sqlserver'`) } catch (_) {}
   try { db.exec(`CREATE INDEX IF NOT EXISTS idx_metrics_time ON metrics(created_at)`) } catch (_) {}
 
@@ -141,6 +149,10 @@ function toApiMetric(r) {
     tps: r.tps || 0,
     slaveDelay: r.slave_delay ?? -1,
     slowCount: r.slow_queries || 0,
+    lockWaitSessions: r.lock_wait_sessions ?? -1,
+    blockingSessions: r.blocking_sessions ?? -1,
+    tablespaceMaxUsed: r.tablespace_max_used ?? -1,
+    fraUsed: r.fra_used ?? -1,
     extra_data: r.extra_data || ''
   }
 }
@@ -253,8 +265,16 @@ function insertMetric(targetId, point, keepHours) {
     (typeof point.extraData === 'string' ? point.extraData : null) ??
     ''
   d.prepare(`
-    INSERT INTO metrics(target_id, status, role, connections, resp_time, qps, tps, slave_delay, slow_queries, threads_running, extra_data, created_at)
-    VALUES(@target_id,@status,@role,@connections,@resp_time,@qps,@tps,@slave_delay,@slow_queries,@threads_running,@extra_data,@created_at)
+    INSERT INTO metrics(
+      target_id, status, role, connections, resp_time, qps, tps, slave_delay, slow_queries, threads_running,
+      lock_wait_sessions, blocking_sessions, tablespace_max_used, fra_used,
+      extra_data, created_at
+    )
+    VALUES(
+      @target_id,@status,@role,@connections,@resp_time,@qps,@tps,@slave_delay,@slow_queries,@threads_running,
+      @lock_wait_sessions,@blocking_sessions,@tablespace_max_used,@fra_used,
+      @extra_data,@created_at
+    )
   `).run({
     target_id: targetId,
     status: point.online ? 1 : 0,
@@ -266,6 +286,10 @@ function insertMetric(targetId, point, keepHours) {
     slave_delay: point.slaveDelay ?? -1,
     slow_queries: point.slowCount ?? point.slow_queries ?? 0,
     threads_running: point.threadsRunning ?? point.threads_running ?? 0,
+    lock_wait_sessions: point.lockWaitSessions ?? point.lock_wait_sessions ?? -1,
+    blocking_sessions: point.blockingSessions ?? point.blocking_sessions ?? -1,
+    tablespace_max_used: point.tablespaceMaxUsed ?? point.tablespace_max_used ?? -1,
+    fra_used: point.fraUsed ?? point.fra_used ?? -1,
     extra_data: extraData,
     created_at: ts
   })
@@ -284,10 +308,14 @@ function rangeMetrics(targetId, fromTs, toTs, options = {}) {
     try {
       rows = d.prepare(`
         SELECT
-          created_at, status, role, connections, resp_time, qps, tps, slave_delay, slow_queries, threads_running, extra_data
+          created_at, status, role, connections, resp_time, qps, tps, slave_delay, slow_queries, threads_running,
+          lock_wait_sessions, blocking_sessions, tablespace_max_used, fra_used,
+          extra_data
         FROM (
           SELECT
-            created_at, status, role, connections, resp_time, qps, tps, slave_delay, slow_queries, threads_running, extra_data,
+            created_at, status, role, connections, resp_time, qps, tps, slave_delay, slow_queries, threads_running,
+            lock_wait_sessions, blocking_sessions, tablespace_max_used, fra_used,
+            extra_data,
             ROW_NUMBER() OVER (PARTITION BY CAST(created_at / ? AS INTEGER) ORDER BY created_at DESC) AS rn
           FROM metrics
           WHERE target_id = ? AND created_at BETWEEN ? AND ?

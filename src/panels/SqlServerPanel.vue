@@ -8,6 +8,64 @@
       <div class="ops-hint">{{ rangeText }}</div>
     </div>
 
+    <el-card shadow="never" class="kpi-card-root">
+      <template #header>
+        <div class="panel-header">
+          <b>KPI (Latest Snapshot)</b>
+        </div>
+      </template>
+      <el-row :gutter="12">
+        <el-col :span="6">
+          <div class="info-item">
+            <div class="info-label">Response (ms) · Latest</div>
+            <div class="info-value lm-num">{{ respMsText }}</div>
+          </div>
+        </el-col>
+        <el-col :span="6">
+          <div class="info-item">
+            <div class="info-label">Batch Requests (/s) · Latest</div>
+            <div class="info-value lm-num">{{ qpsText }}</div>
+          </div>
+        </el-col>
+        <el-col :span="6">
+          <div class="info-item">
+            <div class="info-label">User Connections · Latest</div>
+            <div class="info-value lm-num">{{ sessionsText }}</div>
+          </div>
+        </el-col>
+        <el-col :span="6">
+          <div class="info-item">
+            <div class="info-label">Running Requests · Latest</div>
+            <div class="info-value lm-num">{{ threadsText }}</div>
+          </div>
+        </el-col>
+        <el-col :span="6">
+          <div class="info-item">
+            <div class="info-label">Blocking Sessions · Latest</div>
+            <div class="info-value lm-num">{{ blockingCount }}</div>
+          </div>
+        </el-col>
+        <el-col :span="6">
+          <div class="info-item">
+            <div class="info-label">Top Wait · Latest</div>
+            <div class="info-value lm-num">{{ topWaitText }}</div>
+          </div>
+        </el-col>
+        <el-col :span="6">
+          <div class="info-item">
+            <div class="info-label">Disk Read Latency (ms) · Latest</div>
+            <div class="info-value lm-num">{{ ioReadText }}</div>
+          </div>
+        </el-col>
+        <el-col :span="6">
+          <div class="info-item">
+            <div class="info-label">AG Sync Lag · Latest</div>
+            <div class="info-value lm-num">{{ agLagText }}</div>
+          </div>
+        </el-col>
+      </el-row>
+    </el-card>
+
     <el-tabs v-model="activeTab" class="mssql-tabs">
       <el-tab-pane label="Metrics" name="metrics">
         <section class="lm-section">
@@ -164,6 +222,30 @@ const agLagText = computed(() => {
   const n = Number(latestExtra.value.agSyncLagSec)
   if (!Number.isFinite(n) || n < 0) return '—'
   return `${Math.round(n)}s`
+})
+
+const respMsText = computed(() => {
+  const n = Number(latestPoint.value.resp_time)
+  if (!Number.isFinite(n) || n < 0) return '—'
+  return String(Math.round(n))
+})
+
+const qpsText = computed(() => {
+  const n = Number(latestPoint.value.qps)
+  if (!Number.isFinite(n)) return '—'
+  return n.toFixed(2)
+})
+
+const sessionsText = computed(() => {
+  const n = Number(latestPoint.value.sessions)
+  if (!Number.isFinite(n)) return '—'
+  return String(Math.max(0, Math.floor(n)))
+})
+
+const threadsText = computed(() => {
+  const n = Number(latestPoint.value.threadsRunning)
+  if (!Number.isFinite(n)) return '—'
+  return String(Math.max(0, Math.floor(n)))
 })
 
 const refreshMetrics = async () => {
@@ -323,11 +405,13 @@ const initAllCharts = () => {
   if (chartsInFlight) return
   chartsInFlight = true
   nextTick(async () => {
-    await refreshMetrics()
-    await Promise.all(chartConfigs.map(drawSingleChart))
-    connectCharts()
-    if (activeTab.value === 'blocking') await refreshBlocking()
-    chartsInFlight = false
+    try {
+      await refreshMetrics()
+      await Promise.all(chartConfigs.map(drawSingleChart))
+      connectCharts()
+    } finally {
+      chartsInFlight = false
+    }
   })
 }
 
@@ -335,8 +419,15 @@ watch(
   () => [props.autoRefresh, props.isLive, effectiveParams.value, activeTab.value],
   () => {
     clearInterval(chartTimer)
-    initAllCharts()
-    if (props.autoRefresh && props.isLive) chartTimer = setInterval(initAllCharts, 5000)
+    if (activeTab.value === 'metrics') {
+      initAllCharts()
+      if (props.autoRefresh && props.isLive) chartTimer = setInterval(initAllCharts, 5000)
+      return
+    }
+    if (activeTab.value === 'blocking') {
+      refreshBlocking()
+      if (props.autoRefresh && props.isLive) chartTimer = setInterval(refreshBlocking, 5000)
+    }
   },
   { immediate: true }
 )
@@ -355,6 +446,12 @@ onBeforeUnmount(() => {
 .ops-item { display: inline-flex; align-items: center; gap: 8px; background: #fff; border-radius: 12px; border: var(--lm-border); box-shadow: var(--lm-shadow-sm); padding: 10px 12px; cursor: pointer; }
 .ops-label { font-size: 12px; color: var(--lm-text); font-weight: 700; }
 .ops-hint { margin-left: auto; font-size: 12px; color: var(--lm-muted); }
+.kpi-card-root { border-radius: 12px; border: var(--lm-border); box-shadow: var(--lm-shadow-sm); }
+.kpi-card-root :deep(.el-card__body) { padding: 16px 16px; }
+.panel-header { display: flex; align-items: center; justify-content: space-between; }
+.info-item { background: #fff; border-radius: 12px; padding: 12px 14px; box-shadow: var(--lm-shadow-sm); border: var(--lm-border); }
+.info-label { font-size: 11px; color: var(--lm-muted); letter-spacing: 0.02em; }
+.info-value { margin-top: 6px; font-size: 16px; font-weight: 700; color: var(--lm-text); text-align: right; }
 .charts-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .chart-card { background: #fff; border-radius: 12px; border: var(--lm-border); box-shadow: var(--lm-shadow-sm); padding: 14px 14px; min-height: 320px; }
 .chart-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
