@@ -8,6 +8,7 @@
       :span-method="mergeBusinessSystem ? spanMethod : undefined"
       :header-cell-style="{ background: '#f8fafc', color: '#606266', fontWeight: 'bold' }"
       :border="false"
+      table-layout="fixed"
       empty-text="No data"
       row-key="id"
       default-expand-all
@@ -56,7 +57,7 @@
 
       <slot name="extra" :get-latest="getLatest" />
 
-      <el-table-column label="Actions" width="140" align="center" header-align="center">
+      <el-table-column label="Actions" width="140" align="center" header-align="center" fixed="right">
         <template #default="scope">
           <div class="actions">
             <el-button link type="primary" class="act" @click="emit('select', scope.row)">
@@ -151,7 +152,7 @@ const spanMethod = ({ rowIndex, column }) => {
 .dot-ok { background: #10b981; }
 .dot-bad { background: #ef4444; }
 .status-text { color: #374151; }
-.actions { display: inline-flex; align-items: center; gap: 6px; }
+.actions { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .act { padding: 0; }
 .act-ico { width: 16px; height: 16px; }
 .lm-table-toolbar { padding: 12px 12px; border-bottom: 1px solid var(--lm-table-row-sep); background: #fff; display: flex; align-items: center; justify-content: space-between; gap: 12px; }

@@ -1,0 +1,239 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LightMonitor KPI Preview - Grid</title>
+  <style>
+    :root {
+      --bg: #f3f5f9;
+      --panel: #ffffff;
+      --ink: #111827;
+      --muted: #6b7280;
+      --muted-2: #9ca3af;
+      --line: rgba(15,23,42,0.12);
+      --line-strong: rgba(15,23,42,0.16);
+      --soft: #f8fafc;
+      --shadow: 0 10px 22px rgba(15,23,42,0.10);
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --space-2: 10px;
+      --space-3: 14px;
+      --space-4: 16px;
+      --space-5: 20px;
+      --space-6: 28px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Source Sans 3", "Noto Sans SC", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(900px 480px at 80% -10%, rgba(37,99,235,0.10), transparent),
+        radial-gradient(700px 520px at 10% 10%, rgba(16,185,129,0.10), transparent),
+        var(--bg);
+    }
+
+    .page {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px 22px 60px;
+      display: grid;
+      gap: var(--space-6);
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      padding: var(--space-5);
+      display: grid;
+      gap: var(--space-4);
+    }
+
+    .panel-head {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: var(--space-3);
+    }
+
+    .db-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      color: #0f172a;
+      background: linear-gradient(135deg, rgba(37,99,235,0.22), rgba(37,99,235,0.08));
+    }
+
+    .db-meta h3 { margin: 0; font-size: 18px; }
+    .db-meta p { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+
+    .status { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; }
+
+    .ops-strip {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .ops-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 6px 12px rgba(15,23,42,0.06);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(15,23,42,0.12); background: var(--soft); color: #0f172a; }
+    .tag.warn { color: #f97316; border-color: rgba(249,115,22,0.35); background: rgba(249,115,22,0.08); }
+    .tag.bad { color: #ef4444; border-color: rgba(239,68,68,0.35); background: rgba(239,68,68,0.08); }
+
+    .kpi-grid {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--soft);
+      padding: var(--space-4);
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0,1fr));
+      gap: 0;
+    }
+
+    .kpi-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: baseline;
+      gap: 10px;
+      padding: 10px 12px;
+      background: #fff;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .kpi-row:nth-child(4n) { border-right: none; }
+    .kpi-row:nth-last-child(-n + 4) { border-bottom: none; }
+
+    .kpi-row .label { font-size: 11px; color: var(--muted); font-weight: 500; }
+    .kpi-row .value { font-size: 18px; font-weight: 700; color: #111827; text-align: right; }
+    .kpi-row .value.warn { color: #f97316; }
+    .kpi-row .value.bad { color: #ef4444; }
+    .kpi-row .sub { font-size: 11px; color: var(--muted-2); font-weight: 500; text-align: right; }
+
+    @media (max-width: 1100px) {
+      .kpi-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .kpi-row:nth-child(4n) { border-right: 1px solid var(--line); }
+      .kpi-row:nth-child(2n) { border-right: none; }
+      .kpi-row:nth-last-child(-n + 4) { border-bottom: 1px solid var(--line); }
+      .kpi-row:nth-last-child(-n + 2) { border-bottom: none; }
+      .panel-head { grid-template-columns: 1fr; align-items: start; }
+    }
+
+    @media (max-width: 640px) {
+      .page { padding: 18px 14px 44px; }
+      .kpi-grid { grid-template-columns: 1fr; }
+      .kpi-row { border-right: none; }
+      .kpi-row:nth-last-child(-n + 2) { border-bottom: 1px solid var(--line); }
+      .kpi-row:last-child { border-bottom: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="panel">
+      <div class="panel-head">
+        <div class="db-icon">MY</div>
+        <div class="db-meta">
+          <h3>order-db-01</h3>
+          <p>MySQL 8.0 · 10.21.32.12:3306 · Replica</p>
+        </div>
+        <div class="status"><span class="dot"></span> Online · last 10s</div>
+      </div>
+
+      <div class="ops-strip">
+        <div class="ops-item">Lock waits <span class="tag bad">3</span></div>
+        <div class="ops-item">Slow queries <span class="tag warn">7</span></div>
+        <div class="ops-item">Range <span class="tag">Last 1h</span></div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-row"><div><div class="label">Response (ms)</div></div><div><div class="value">48</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">QPS</div></div><div><div class="value">3,420</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">TPS</div></div><div><div class="value">1,180</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">Connections</div></div><div><div class="value">182</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">Threads Running</div></div><div><div class="value">22</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">Slow Count</div></div><div><div class="value">7</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">Replication Lag</div></div><div><div class="value warn">3.2s</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">Role</div></div><div><div class="value">Slave</div><div class="sub">Latest</div></div></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div class="db-icon">MS</div>
+        <div class="db-meta">
+          <h3>billing-sql-02</h3>
+          <p>SQL Server 2019 · 10.21.32.40:1433 · Secondary</p>
+        </div>
+        <div class="status"><span class="dot"></span> Online · last 12s</div>
+      </div>
+
+      <div class="ops-strip">
+        <div class="ops-item">Blocking <span class="tag bad">5</span></div>
+        <div class="ops-item">Range <span class="tag">Last 1h</span></div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-row"><div><div class="label">Response (ms)</div></div><div><div class="value">62</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">Batch Requests (/s)</div></div><div><div class="value">2,210</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">User Connections</div></div><div><div class="value">240</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">Running Requests</div></div><div><div class="value">37</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">Blocking Sessions</div></div><div><div class="value">5</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">Top Wait</div></div><div><div class="value">IO 42%</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">Disk Read Latency (ms)</div></div><div><div class="value">8.2</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">AG Sync Lag</div></div><div><div class="value warn">4.6s</div><div class="sub">Latest</div></div></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div class="db-icon">OR</div>
+        <div class="db-meta">
+          <h3>finance-orcl-01</h3>
+          <p>Oracle 19c · 10.21.33.18:1521 · Standby</p>
+        </div>
+        <div class="status"><span class="dot"></span> Online · last 11s</div>
+      </div>
+
+      <div class="ops-strip">
+        <div class="ops-item">Locks <span class="tag bad">3</span></div>
+        <div class="ops-item">Capacity <span class="tag warn">TS 92% / FRA 68%</span></div>
+        <div class="ops-item">Range <span class="tag">Last 1h</span></div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-row"><div><div class="label">Response (ms)</div></div><div><div class="value">55</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">QPS (Execute/s)</div></div><div><div class="value">1,870</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">Active Sessions</div></div><div><div class="value">42</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">Total Sessions</div></div><div><div class="value">180</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">Lock Wait Sessions</div></div><div><div class="value">3</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">Blocking Sessions</div></div><div><div class="value">2</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">Tablespace Max Used</div></div><div><div class="value warn">92%</div><div class="sub">Latest</div></div></div>
+        <div class="kpi-row"><div><div class="label">FRA Used</div></div><div><div class="value">68%</div><div class="sub">Latest</div></div></div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

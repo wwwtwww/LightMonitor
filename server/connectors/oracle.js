@@ -28,6 +28,14 @@ function toNum(v, fallback = null) {
   return Number.isFinite(n) ? n : fallback
 }
 
+function mapOracleRole(databaseRole) {
+  const r = String(databaseRole || '').trim().toUpperCase()
+  if (!r) return ''
+  if (r.includes('PRIMARY')) return 'master'
+  if (r.includes('STANDBY')) return 'slave'
+  return 'standalone'
+}
+
 function ensureOracleClient(cfgOptions) {
   if (!oracledb || oracleClientState.attempted) return
   oracleClientState.attempted = true
@@ -91,6 +99,9 @@ class OracleConnector extends BaseConnector {
     const t0 = Date.now()
     const conn = await this._getConnection()
     try {
+      let role = ''
+      let databaseRole = ''
+      let openMode = ''
       let totalSessions = 0
       let activeSessions = 0
       let execCount = 0
@@ -98,6 +109,18 @@ class OracleConnector extends BaseConnector {
       let blockingSessions = -1
       let tablespaceMaxUsed = -1
       let fraUsed = -1
+
+      try {
+        const r = await conn.execute(`SELECT database_role AS database_role, open_mode AS open_mode FROM v$database`)
+        const row = r?.rows?.[0] || null
+        databaseRole = String(row?.DATABASE_ROLE ?? row?.database_role ?? '').trim()
+        openMode = String(row?.OPEN_MODE ?? row?.open_mode ?? '').trim()
+        role = mapOracleRole(databaseRole)
+      } catch (_) {
+        role = ''
+        databaseRole = ''
+        openMode = ''
+      }
 
       try {
         const r = await conn.execute(`SELECT COUNT(*) AS val FROM v$session WHERE type = 'USER'`)
@@ -186,13 +209,14 @@ class OracleConnector extends BaseConnector {
       prevStats.set(this.cfg.id, nextPrev)
 
       return {
+        role,
         sessions: totalSessions,
         qps,
         lockWaitSessions,
         blockingSessions,
         tablespaceMaxUsed,
         fraUsed,
-        extra_data: JSON.stringify({ activeSessions }),
+        extra_data: JSON.stringify({ activeSessions, databaseRole, openMode }),
         resp_time: Date.now() - t0
       }
     } finally {

@@ -1,0 +1,472 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LightMonitor UI Preview</title>
+  <style>
+    :root {
+      --bg: #0f1116;
+      --bg-2: #141824;
+      --panel: #1a2030;
+      --panel-2: #222a3e;
+      --text: #e7ecf5;
+      --muted: #9aa6bf;
+      --accent: #7dd3fc;
+      --accent-2: #fbbf24;
+      --ok: #34d399;
+      --warn: #f59e0b;
+      --bad: #f87171;
+      --line: rgba(255,255,255,0.08);
+      --shadow: 0 20px 40px rgba(0,0,0,0.35);
+      --radius-lg: 18px;
+      --radius-md: 12px;
+      --radius-sm: 10px;
+      --space-1: 6px;
+      --space-2: 10px;
+      --space-3: 14px;
+      --space-4: 20px;
+      --space-5: 28px;
+      --space-6: 36px;
+      --space-7: 48px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Source Sans 3", "Noto Sans SC", sans-serif;
+      background: radial-gradient(1200px 600px at 80% -20%, rgba(125,211,252,0.15), transparent),
+                  radial-gradient(900px 500px at 10% 10%, rgba(251,191,36,0.12), transparent),
+                  var(--bg);
+      color: var(--text);
+    }
+
+    .page {
+      padding: 32px 28px 64px;
+      max-width: 1300px;
+      margin: 0 auto;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: var(--space-6);
+      align-items: center;
+      margin-bottom: var(--space-7);
+    }
+
+    .hero h1 {
+      font-size: 36px;
+      letter-spacing: 0.2px;
+      margin: 0 0 var(--space-3) 0;
+    }
+
+    .hero p {
+      color: var(--muted);
+      margin: 0 0 var(--space-4) 0;
+      line-height: 1.6;
+      max-width: 640px;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+    }
+
+    .pill {
+      background: rgba(125,211,252,0.15);
+      border: 1px solid rgba(125,211,252,0.25);
+      color: var(--accent);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      letter-spacing: 0.2px;
+    }
+
+    .hero-card {
+      background: linear-gradient(135deg, rgba(30,41,59,0.9), rgba(15,23,42,0.9));
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: var(--space-5);
+      box-shadow: var(--shadow);
+    }
+
+    .hero-card .meta {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0,1fr));
+      gap: var(--space-3);
+      margin-top: var(--space-4);
+    }
+
+    .meta .item {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: var(--space-3);
+    }
+
+    .item .label { color: var(--muted); font-size: 12px; }
+    .item .value { font-size: 18px; margin-top: 6px; }
+
+    .section {
+      margin-bottom: var(--space-7);
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--space-4);
+    }
+
+    .section-title h2 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0.2px;
+    }
+
+    .section-title span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .db-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: var(--space-5);
+      box-shadow: var(--shadow);
+    }
+
+    .db-header {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: var(--space-3);
+      align-items: center;
+      margin-bottom: var(--space-4);
+    }
+
+    .db-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(125,211,252,0.3), rgba(59,130,246,0.2));
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .db-meta h3 { margin: 0; font-size: 18px; }
+    .db-meta p { margin: 6px 0 0 0; color: var(--muted); font-size: 12px; }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0,1fr));
+      gap: var(--space-3);
+      margin-bottom: var(--space-5);
+    }
+
+    .kpi {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: var(--space-3);
+      min-height: 96px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .kpi .label { color: var(--muted); font-size: 12px; }
+    .kpi .value { font-size: 22px; font-weight: 700; }
+    .kpi .sub { color: var(--muted); font-size: 11px; }
+    .kpi .value.warn { color: var(--warn); }
+    .kpi .value.bad { color: var(--bad); }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1.3fr 0.9fr;
+      gap: var(--space-4);
+    }
+
+    .chart-card {
+      background: #101726;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: var(--space-3);
+      min-height: 220px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .chart-card h4 {
+      margin: 0 0 8px 0;
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .chart-legend {
+      display: flex;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    .legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+
+    .diag-list {
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .diag-item {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: var(--space-2) var(--space-3);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+    }
+
+    .diag-item span { color: var(--muted); }
+
+    .badge {
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(248,113,113,0.15);
+      color: var(--bad);
+      font-size: 11px;
+    }
+
+    .footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: var(--space-7);
+    }
+
+    @media (max-width: 1024px) {
+      .hero { grid-template-columns: 1fr; }
+      .split { grid-template-columns: 1fr; }
+      .kpi-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .hero-card .meta { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    }
+
+    @media (max-width: 640px) {
+      .page { padding: 24px 16px 48px; }
+      .kpi-grid { grid-template-columns: 1fr; }
+      .hero-card .meta { grid-template-columns: 1fr; }
+      .db-header { grid-template-columns: 1fr; align-items: start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div>
+        <h1>LightMonitor UI Preview</h1>
+        <p>Preview layout focusing on key metrics per database, with a cleaner visual rhythm and lower information density. This page is static and does not affect production views.</p>
+        <div class="pill-row">
+          <span class="pill">Key Metrics Only</span>
+          <span class="pill">2-Row KPI Grid</span>
+          <span class="pill">Trend + Diagnostics</span>
+          <span class="pill">Replication Lag First-Class</span>
+        </div>
+      </div>
+      <div class="hero-card">
+        <div class="section-title" style="margin:0 0 6px 0;">
+          <h2>Instance Overview</h2>
+          <span>Updated 20s ago</span>
+        </div>
+        <div class="meta">
+          <div class="item">
+            <div class="label">Environment</div>
+            <div class="value">Production</div>
+          </div>
+          <div class="item">
+            <div class="label">Health</div>
+            <div class="value" style="color:var(--ok)">Healthy</div>
+          </div>
+          <div class="item">
+            <div class="label">Incidents (24h)</div>
+            <div class="value">2</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <h2>MySQL Key Metrics</h2>
+        <span>Role: Replica | Lag: 3.2s</span>
+      </div>
+      <div class="db-panel">
+        <div class="db-header">
+          <div class="db-icon">MY</div>
+          <div class="db-meta">
+            <h3>order-db-01</h3>
+            <p>10.21.32.12:3306 · MySQL 8.0</p>
+          </div>
+          <div class="status"><span class="dot"></span> Online · last 10s</div>
+        </div>
+        <div class="kpi-grid">
+          <div class="kpi"><div class="label">Response Time</div><div class="value">48ms</div><div class="sub">p95 120ms</div></div>
+          <div class="kpi"><div class="label">QPS</div><div class="value">3,420</div><div class="sub">peak 6,200</div></div>
+          <div class="kpi"><div class="label">Connections</div><div class="value">182</div><div class="sub">limit 500</div></div>
+          <div class="kpi"><div class="label">Threads Running</div><div class="value">22</div><div class="sub">avg 18</div></div>
+          <div class="kpi"><div class="label">Replication Lag</div><div class="value warn">3.2s</div><div class="sub">threshold 5s</div></div>
+          <div class="kpi"><div class="label">Slow Queries</div><div class="value">7</div><div class="sub">last 1h</div></div>
+        </div>
+        <div class="split">
+          <div class="chart-card">
+            <h4>Response Time vs QPS</h4>
+            <svg viewBox="0 0 600 180" width="100%" height="170" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="line1" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stop-color="#7dd3fc" stop-opacity="0.4" />
+                  <stop offset="100%" stop-color="#7dd3fc" stop-opacity="0" />
+                </linearGradient>
+              </defs>
+              <path d="M0,140 C60,120 120,150 180,110 C240,70 300,100 360,80 C420,60 480,90 600,50" fill="none" stroke="#7dd3fc" stroke-width="2" />
+              <path d="M0,150 C60,130 120,160 180,120 C240,80 300,110 360,90 C420,70 480,100 600,60 L600,180 L0,180 Z" fill="url(#line1)" />
+              <path d="M0,160 C80,150 160,130 240,140 C320,150 400,120 480,130 C540,140 560,110 600,120" fill="none" stroke="#fbbf24" stroke-width="2" stroke-dasharray="6 4" />
+            </svg>
+            <div class="chart-legend">
+              <div><span class="legend-dot" style="background:#7dd3fc"></span>Response Time</div>
+              <div><span class="legend-dot" style="background:#fbbf24"></span>QPS</div>
+            </div>
+          </div>
+          <div class="chart-card">
+            <h4>Diagnostics (Top)</h4>
+            <div class="diag-list">
+              <div class="diag-item">Lock Waits <span>3 sessions</span></div>
+              <div class="diag-item">Slow Query Avg <span>1.2s</span></div>
+              <div class="diag-item">Top Table <span>orders_history</span></div>
+              <div class="diag-item">Killable Threads <span class="badge">2</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <h2>SQL Server Key Metrics</h2>
+        <span>AG Lag: 4.6s (Redo)</span>
+      </div>
+      <div class="db-panel">
+        <div class="db-header">
+          <div class="db-icon">MS</div>
+          <div class="db-meta">
+            <h3>billing-sql-02</h3>
+            <p>10.21.32.40:1433 · SQL Server 2019</p>
+          </div>
+          <div class="status"><span class="dot"></span> Online · last 15s</div>
+        </div>
+        <div class="kpi-grid">
+          <div class="kpi"><div class="label">Response Time</div><div class="value">62ms</div><div class="sub">p95 180ms</div></div>
+          <div class="kpi"><div class="label">Batch Requests/sec</div><div class="value">2,210</div><div class="sub">peak 4,100</div></div>
+          <div class="kpi"><div class="label">Connections</div><div class="value">240</div><div class="sub">limit 800</div></div>
+          <div class="kpi"><div class="label">Running Requests</div><div class="value">37</div><div class="sub">avg 29</div></div>
+          <div class="kpi"><div class="label">Replication Lag</div><div class="value warn">4.6s</div><div class="sub">redo/send</div></div>
+          <div class="kpi"><div class="label">Blocking Sessions</div><div class="value">5</div><div class="sub">top 1m</div></div>
+        </div>
+        <div class="split">
+          <div class="chart-card">
+            <h4>Waits Distribution</h4>
+            <svg viewBox="0 0 600 180" width="100%" height="170" preserveAspectRatio="none">
+              <rect x="0" y="120" width="120" height="60" fill="#7dd3fc" />
+              <rect x="130" y="80" width="120" height="100" fill="#fbbf24" />
+              <rect x="260" y="40" width="120" height="140" fill="#60a5fa" />
+              <rect x="390" y="100" width="120" height="80" fill="#a78bfa" />
+              <rect x="520" y="140" width="70" height="40" fill="#34d399" />
+            </svg>
+            <div class="chart-legend">
+              <div><span class="legend-dot" style="background:#7dd3fc"></span>LOCK</div>
+              <div><span class="legend-dot" style="background:#fbbf24"></span>IO</div>
+              <div><span class="legend-dot" style="background:#60a5fa"></span>CPU</div>
+              <div><span class="legend-dot" style="background:#a78bfa"></span>LOG</div>
+              <div><span class="legend-dot" style="background:#34d399"></span>OTHER</div>
+            </div>
+          </div>
+          <div class="chart-card">
+            <h4>Blocking Snapshot</h4>
+            <div class="diag-list">
+              <div class="diag-item">SPID 88 <span>wait 12s</span></div>
+              <div class="diag-item">SPID 112 <span>wait 8s</span></div>
+              <div class="diag-item">Top DB <span>billing_core</span></div>
+              <div class="diag-item">Deadlocks <span class="badge">1</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <h2>Oracle Key Metrics</h2>
+        <span>Data Guard Lag: 2.1s</span>
+      </div>
+      <div class="db-panel">
+        <div class="db-header">
+          <div class="db-icon">OR</div>
+          <div class="db-meta">
+            <h3>finance-orcl-01</h3>
+            <p>10.21.33.18:1521 · Oracle 19c</p>
+          </div>
+          <div class="status"><span class="dot"></span> Online · last 12s</div>
+        </div>
+        <div class="kpi-grid">
+          <div class="kpi"><div class="label">Response Time</div><div class="value">55ms</div><div class="sub">p95 150ms</div></div>
+          <div class="kpi"><div class="label">Execute Count/sec</div><div class="value">1,870</div><div class="sub">peak 3,400</div></div>
+          <div class="kpi"><div class="label">Sessions (Total/Active)</div><div class="value">180 / 42</div><div class="sub">active ratio 23%</div></div>
+          <div class="kpi"><div class="label">Replication Lag</div><div class="value">2.1s</div><div class="sub">DG apply</div></div>
+          <div class="kpi"><div class="label">Lock Wait Sessions</div><div class="value">3</div><div class="sub">last 1m</div></div>
+          <div class="kpi"><div class="label">Tablespace Max Used</div><div class="value warn">92%</div><div class="sub">FRA 68%</div></div>
+        </div>
+        <div class="split">
+          <div class="chart-card">
+            <h4>Session Load (Active vs Total)</h4>
+            <svg viewBox="0 0 600 180" width="100%" height="170" preserveAspectRatio="none">
+              <path d="M0,150 C80,120 160,130 240,100 C320,70 400,90 480,60 C540,45 560,40 600,30" fill="none" stroke="#34d399" stroke-width="2" />
+              <path d="M0,170 C100,160 200,150 300,140 C400,130 500,120 600,110" fill="none" stroke="#94a3b8" stroke-width="2" stroke-dasharray="4 4" />
+            </svg>
+            <div class="chart-legend">
+              <div><span class="legend-dot" style="background:#34d399"></span>Active</div>
+              <div><span class="legend-dot" style="background:#94a3b8"></span>Total</div>
+            </div>
+          </div>
+          <div class="chart-card">
+            <h4>Capacity Alerts</h4>
+            <div class="diag-list">
+              <div class="diag-item">SYSTEM tablespace <span>88%</span></div>
+              <div class="diag-item">USERS tablespace <span class="badge">94%</span></div>
+              <div class="diag-item">FRA usage <span>68%</span></div>
+              <div class="diag-item">Top Schema <span>FIN_CORE</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">Preview only · no changes to production UI</div>
+  </div>
+</body>
+</html>

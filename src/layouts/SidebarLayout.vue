@@ -38,7 +38,7 @@ const onSelect = (key) => {
 <style scoped>
 .layout-root { min-height: 100vh; background: var(--lm-bg); display: grid; grid-template-columns: 240px 1fr; }
 .layout-aside { background: #2C3E50; border-right: none; padding: 14px 14px; display: flex; flex-direction: column; }
-.layout-main { padding: 32px; }
+.layout-main { padding: 32px; min-width: 0; }
 .brand { padding: 10px 10px 16px; }
 .brand-name { font-size: 18px; font-weight: 800; color: #fff; line-height: 1.1; letter-spacing: 0.2px; }
 .brand-sub { margin-top: 6px; font-size: 12px; color: rgba(255, 255, 255, 0.72); }

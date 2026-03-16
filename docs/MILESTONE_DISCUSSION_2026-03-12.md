@@ -92,3 +92,7 @@ LightMonitor 定位为无代理（仅 DB 账号）数据库监控。近期围绕
 - 扩展成本降低：新增/增强某一种 DB 类型的 KPI/诊断，无需改动通用容器（DetailLayout）
 - 性能风险受控：高范围 metrics 请求不再拖慢轻接口（参照 PERF_RCA 的并发验证方法）
 
+## 7. 补充：规模与运维评审（500 目标 / 30 天保留）
+
+面向 DBA 内部使用、不对外暴露、约 500 目标、30 天保留的容量与运维评审建议已单独沉淀：
+- [ARCH_REVIEW_2026-03-12.md](file:///e:/LightMonitor-1/docs/ARCH_REVIEW_2026-03-12.md)
